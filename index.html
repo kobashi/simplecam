@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no"
+    />
+    <title>Camera Frame Preview</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app">
+      <section class="preview-shell" aria-label="camera preview">
+        <video
+          id="camera"
+          class="camera-feed"
+          autoplay
+          muted
+          playsinline
+          webkit-playsinline="true"
+        ></video>
+        <div class="preview-vignette" aria-hidden="true"></div>
+        <div class="framing-overlay" aria-hidden="true">
+          <div class="mini-window">
+            <div class="mini-window__label">FRAME</div>
+          </div>
+        </div>
+        <div class="status-panel" id="statusPanel" aria-live="polite">
+          リアカメラを起動中...
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
