@@ -15,6 +15,8 @@ const state = {
 
 const gesture = {
   pointers: new Map(),
+  pointerGestureActive: false,
+  touchGestureActive: false,
   startDistance: null,
   startZoom: 1,
   startMidpoint: null,
@@ -118,7 +120,7 @@ function getMidpoint(points) {
 
 function getZoomAdjustedDelta(deltaPx, axisSizePx) {
   const percent = (deltaPx / axisSizePx) * 100;
-  return percent / Math.max(state.zoom, 1);
+  return percent;
 }
 
 function resetSinglePointerAnchor(point) {
@@ -174,6 +176,7 @@ function handleSwipeMove(point) {
 
 function onPointerDown(event) {
   if (event.pointerType === "mouse") return;
+  gesture.pointerGestureActive = true;
   gesture.pointers.set(event.pointerId, { clientX: event.clientX, clientY: event.clientY });
   video.setPointerCapture?.(event.pointerId);
 
@@ -189,6 +192,7 @@ function onPointerDown(event) {
 }
 
 function onPointerMove(event) {
+  if (!gesture.pointerGestureActive) return;
   if (!gesture.pointers.has(event.pointerId)) return;
   event.preventDefault();
 
@@ -206,11 +210,13 @@ function onPointerMove(event) {
 }
 
 function onPointerUpOrCancel(event) {
+  if (!gesture.pointerGestureActive) return;
   gesture.pointers.delete(event.pointerId);
   video.releasePointerCapture?.(event.pointerId);
 
   const points = [...gesture.pointers.values()];
   if (points.length === 0) {
+    gesture.pointerGestureActive = false;
     gesture.startDistance = null;
     gesture.startMidpoint = null;
     resetSinglePointerAnchor(null);
@@ -225,6 +231,7 @@ function onPointerUpOrCancel(event) {
 }
 
 function onTouchStart(event) {
+  gesture.touchGestureActive = true;
   if (event.touches.length === 1) {
     beginSwipe(event.touches[0]);
     return;
@@ -235,6 +242,7 @@ function onTouchStart(event) {
 }
 
 function onTouchMove(event) {
+  if (!gesture.touchGestureActive) return;
   event.preventDefault();
   if (event.touches.length >= 2) {
     handlePinchMove([event.touches[0], event.touches[1]]);
@@ -246,6 +254,7 @@ function onTouchMove(event) {
 }
 
 function onTouchEnd(event) {
+  if (!gesture.touchGestureActive) return;
   if (event.touches.length === 1) {
     gesture.startDistance = null;
     gesture.startMidpoint = null;
@@ -253,6 +262,7 @@ function onTouchEnd(event) {
     return;
   }
   if (event.touches.length === 0) {
+    gesture.touchGestureActive = false;
     gesture.startDistance = null;
     gesture.startMidpoint = null;
     resetSinglePointerAnchor(null);
@@ -265,15 +275,14 @@ const isIOS =
 
 if (isIOS) {
   video.addEventListener("touchstart", onTouchStart, { passive: true });
-  video.addEventListener("touchmove", onTouchMove, { passive: false });
-  video.addEventListener("touchend", onTouchEnd, { passive: true });
-  video.addEventListener("touchcancel", onTouchEnd, { passive: true });
+  window.addEventListener("touchmove", onTouchMove, { passive: false });
+  window.addEventListener("touchend", onTouchEnd, { passive: true });
+  window.addEventListener("touchcancel", onTouchEnd, { passive: true });
 } else {
   video.addEventListener("pointerdown", onPointerDown, { passive: true });
-  video.addEventListener("pointermove", onPointerMove, { passive: false });
-  video.addEventListener("pointerup", onPointerUpOrCancel, { passive: true });
-  video.addEventListener("pointercancel", onPointerUpOrCancel, { passive: true });
-  video.addEventListener("pointerout", onPointerUpOrCancel, { passive: true });
+  window.addEventListener("pointermove", onPointerMove, { passive: false });
+  window.addEventListener("pointerup", onPointerUpOrCancel, { passive: true });
+  window.addEventListener("pointercancel", onPointerUpOrCancel, { passive: true });
 }
 window.addEventListener("resize", applyPreviewTransform);
 
