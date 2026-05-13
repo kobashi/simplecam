@@ -26,6 +26,7 @@ const gesture = {
 };
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+const PAN_SENSITIVITY = 1.8;
 
 function setStatus(message) {
   statusPanel.textContent = message;
@@ -90,7 +91,7 @@ async function syncNativeZoom() {
 }
 
 function getPanBounds() {
-  const range = ((state.zoom - 1) / state.zoom) * 50;
+  const range = Math.max(0, (state.zoom - 1) * 100);
   return {
     minX: -range,
     maxX: range,
@@ -100,9 +101,9 @@ function getPanBounds() {
 }
 
 function applyPreviewTransform() {
-  const scale = state.nativeZoomActive ? 1 : state.zoom;
-  video.style.objectPosition = `${50 + state.panX}% ${50 + state.panY}%`;
-  video.style.transform = `scale(${scale})`;
+  const displayScale = state.nativeZoomActive ? 1 : state.zoom;
+  video.style.objectPosition = "center center";
+  video.style.transform = `translate3d(${state.panX}%, ${state.panY}%, 0) scale(${displayScale})`;
 }
 
 function getPointDistance(points) {
@@ -120,7 +121,7 @@ function getMidpoint(points) {
 
 function getZoomAdjustedDelta(deltaPx, axisSizePx) {
   const percent = (deltaPx / axisSizePx) * 100;
-  return percent;
+  return percent * PAN_SENSITIVITY;
 }
 
 function resetSinglePointerAnchor(point) {
@@ -269,11 +270,9 @@ function onTouchEnd(event) {
   }
 }
 
-const isIOS =
-  /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-  (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+const prefersTouchInput = navigator.maxTouchPoints > 0;
 
-if (isIOS) {
+if (prefersTouchInput) {
   video.addEventListener("touchstart", onTouchStart, { passive: true });
   window.addEventListener("touchmove", onTouchMove, { passive: false });
   window.addEventListener("touchend", onTouchEnd, { passive: true });
