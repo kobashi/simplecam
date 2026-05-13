@@ -1,4 +1,6 @@
 const video = document.getElementById("camera");
+const previewShell = document.querySelector(".preview-shell");
+const gestureSurface = document.getElementById("gestureSurface");
 const statusPanel = document.getElementById("statusPanel");
 
 const state = {
@@ -9,8 +11,6 @@ const state = {
   maxZoom: 3,
   panX: 0,
   panY: 0,
-  nativeZoomSupported: false,
-  nativeZoomActive: false,
 };
 
 const gesture = {
@@ -26,7 +26,7 @@ const gesture = {
 };
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
-const PAN_SENSITIVITY = 1.8;
+const PAN_SENSITIVITY = 1.2;
 
 function setStatus(message) {
   statusPanel.textContent = message;
@@ -59,51 +59,32 @@ async function setupCamera() {
 }
 
 function configureTrackCapabilities(track) {
-  const capabilities = track.getCapabilities?.() ?? {};
-  if (capabilities.zoom) {
-    state.nativeZoomSupported = true;
-    state.minZoom = capabilities.zoom.min ?? 1;
-    state.maxZoom = capabilities.zoom.max ?? 3;
-    state.zoom = clamp(capabilities.zoom.min ?? 1, state.minZoom, state.maxZoom);
-  } else {
-    state.nativeZoomSupported = false;
-    state.nativeZoomActive = false;
-    state.minZoom = 1;
-    state.maxZoom = 3;
-    state.zoom = 1;
-  }
+  void track;
+  state.minZoom = 1;
+  state.maxZoom = 3;
+  state.zoom = 1;
 }
 
 async function syncNativeZoom() {
-  if (!state.nativeZoomSupported || !state.track?.applyConstraints) return false;
-
-  try {
-    await state.track.applyConstraints({
-      advanced: [{ zoom: state.zoom }],
-    });
-    state.nativeZoomActive = true;
-    return true;
-  } catch (error) {
-    state.nativeZoomActive = false;
-    console.warn("Native zoom was not applied.", error);
-    return false;
-  }
+  return false;
 }
 
 function getPanBounds() {
-  const range = Math.max(0, (state.zoom - 1) * 100);
+  const width = previewShell.clientWidth || window.innerWidth;
+  const height = previewShell.clientHeight || window.innerHeight;
+  const rangeX = Math.max(0, ((width * state.zoom) - width) / 2);
+  const rangeY = Math.max(0, ((height * state.zoom) - height) / 2);
   return {
-    minX: -range,
-    maxX: range,
-    minY: -range,
-    maxY: range,
+    minX: -rangeX,
+    maxX: rangeX,
+    minY: -rangeY,
+    maxY: rangeY,
   };
 }
 
 function applyPreviewTransform() {
-  const displayScale = state.nativeZoomActive ? 1 : state.zoom;
   video.style.objectPosition = "center center";
-  video.style.transform = `translate3d(${state.panX}%, ${state.panY}%, 0) scale(${displayScale})`;
+  video.style.transform = `translate3d(${state.panX}px, ${state.panY}px, 0) scale(${state.zoom})`;
 }
 
 function getPointDistance(points) {
@@ -119,9 +100,8 @@ function getMidpoint(points) {
   };
 }
 
-function getZoomAdjustedDelta(deltaPx, axisSizePx) {
-  const percent = (deltaPx / axisSizePx) * 100;
-  return percent * PAN_SENSITIVITY;
+function getPanDelta(deltaPx) {
+  return deltaPx * PAN_SENSITIVITY;
 }
 
 function resetSinglePointerAnchor(point) {
@@ -150,25 +130,19 @@ function handlePinchMove(points) {
 
   const midpoint = getMidpoint(points);
   const bounds = getPanBounds();
-  const deltaX = getZoomAdjustedDelta(midpoint.x - gesture.startMidpoint.x, window.innerWidth);
-  const deltaY = getZoomAdjustedDelta(midpoint.y - gesture.startMidpoint.y, window.innerHeight);
+  const deltaX = getPanDelta(midpoint.x - gesture.startMidpoint.x);
+  const deltaY = getPanDelta(midpoint.y - gesture.startMidpoint.y);
   state.panX = clamp(gesture.startPanX + deltaX, bounds.minX, bounds.maxX);
   state.panY = clamp(gesture.startPanY + deltaY, bounds.minY, bounds.maxY);
   applyPreviewTransform();
-  syncNativeZoom().then(() => applyPreviewTransform());
+  syncNativeZoom();
 }
 
 function handleSwipeMove(point) {
   if (!gesture.lastSinglePoint) return;
   const bounds = getPanBounds();
-  const deltaX = getZoomAdjustedDelta(
-    point.clientX - gesture.lastSinglePoint.clientX,
-    window.innerWidth
-  );
-  const deltaY = getZoomAdjustedDelta(
-    point.clientY - gesture.lastSinglePoint.clientY,
-    window.innerHeight
-  );
+  const deltaX = getPanDelta(point.clientX - gesture.lastSinglePoint.clientX);
+  const deltaY = getPanDelta(point.clientY - gesture.lastSinglePoint.clientY);
   state.panX = clamp(state.panX + deltaX, bounds.minX, bounds.maxX);
   state.panY = clamp(state.panY + deltaY, bounds.minY, bounds.maxY);
   resetSinglePointerAnchor(point);
@@ -273,12 +247,12 @@ function onTouchEnd(event) {
 const prefersTouchInput = navigator.maxTouchPoints > 0;
 
 if (prefersTouchInput) {
-  video.addEventListener("touchstart", onTouchStart, { passive: true });
+  gestureSurface.addEventListener("touchstart", onTouchStart, { passive: true });
   window.addEventListener("touchmove", onTouchMove, { passive: false });
   window.addEventListener("touchend", onTouchEnd, { passive: true });
   window.addEventListener("touchcancel", onTouchEnd, { passive: true });
 } else {
-  video.addEventListener("pointerdown", onPointerDown, { passive: true });
+  gestureSurface.addEventListener("pointerdown", onPointerDown, { passive: true });
   window.addEventListener("pointermove", onPointerMove, { passive: false });
   window.addEventListener("pointerup", onPointerUpOrCancel, { passive: true });
   window.addEventListener("pointercancel", onPointerUpOrCancel, { passive: true });

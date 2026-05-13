@@ -68,6 +68,13 @@ body {
   pointer-events: none;
 }
 
+.gesture-surface {
+  position: absolute;
+  inset: 0;
+  touch-action: none;
+  background: transparent;
+}
+
 .status-panel {
   position: absolute;
   left: 50%;
@@ -82,4 +89,5 @@ body {
   font-size: 0.9rem;
   text-align: center;
   backdrop-filter: blur(10px);
+  pointer-events: none;
 }
