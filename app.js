@@ -9,6 +9,8 @@ const state = {
   maxZoom: 3,
   panX: 0,
   panY: 0,
+  nativeZoomSupported: false,
+  nativeZoomActive: false,
 };
 
 const gesture = {
@@ -56,10 +58,13 @@ async function setupCamera() {
 function configureTrackCapabilities(track) {
   const capabilities = track.getCapabilities?.() ?? {};
   if (capabilities.zoom) {
+    state.nativeZoomSupported = true;
     state.minZoom = capabilities.zoom.min ?? 1;
     state.maxZoom = capabilities.zoom.max ?? 3;
     state.zoom = clamp(capabilities.zoom.min ?? 1, state.minZoom, state.maxZoom);
   } else {
+    state.nativeZoomSupported = false;
+    state.nativeZoomActive = false;
     state.minZoom = 1;
     state.maxZoom = 3;
     state.zoom = 1;
@@ -67,16 +72,18 @@ function configureTrackCapabilities(track) {
 }
 
 async function syncNativeZoom() {
-  if (!state.track?.applyConstraints) return;
-  const capabilities = state.track.getCapabilities?.() ?? {};
-  if (!capabilities.zoom) return;
+  if (!state.nativeZoomSupported || !state.track?.applyConstraints) return false;
 
   try {
     await state.track.applyConstraints({
       advanced: [{ zoom: state.zoom }],
     });
+    state.nativeZoomActive = true;
+    return true;
   } catch (error) {
+    state.nativeZoomActive = false;
     console.warn("Native zoom was not applied.", error);
+    return false;
   }
 }
 
@@ -91,14 +98,9 @@ function getPanBounds() {
 }
 
 function applyPreviewTransform() {
-  const scale = capabilitiesSupportZoom() ? 1 : state.zoom;
+  const scale = state.nativeZoomActive ? 1 : state.zoom;
   video.style.objectPosition = `${50 + state.panX}% ${50 + state.panY}%`;
   video.style.transform = `scale(${scale})`;
-}
-
-function capabilitiesSupportZoom() {
-  const capabilities = state.track?.getCapabilities?.() ?? {};
-  return Boolean(capabilities.zoom);
 }
 
 function getPointDistance(points) {
@@ -125,22 +127,64 @@ function resetSinglePointerAnchor(point) {
     : null;
 }
 
+function beginPinch(points) {
+  gesture.startDistance = getPointDistance(points);
+  gesture.startZoom = state.zoom;
+  gesture.startMidpoint = getMidpoint(points);
+  gesture.startPanX = state.panX;
+  gesture.startPanY = state.panY;
+}
+
+function beginSwipe(point) {
+  resetSinglePointerAnchor(point);
+}
+
+function handlePinchMove(points) {
+  if (!gesture.startDistance || !gesture.startMidpoint) return;
+  const distance = getPointDistance(points);
+  const ratio = distance / gesture.startDistance;
+  state.zoom = clamp(gesture.startZoom * ratio, state.minZoom, state.maxZoom);
+
+  const midpoint = getMidpoint(points);
+  const bounds = getPanBounds();
+  const deltaX = getZoomAdjustedDelta(midpoint.x - gesture.startMidpoint.x, window.innerWidth);
+  const deltaY = getZoomAdjustedDelta(midpoint.y - gesture.startMidpoint.y, window.innerHeight);
+  state.panX = clamp(gesture.startPanX + deltaX, bounds.minX, bounds.maxX);
+  state.panY = clamp(gesture.startPanY + deltaY, bounds.minY, bounds.maxY);
+  applyPreviewTransform();
+  syncNativeZoom().then(() => applyPreviewTransform());
+}
+
+function handleSwipeMove(point) {
+  if (!gesture.lastSinglePoint) return;
+  const bounds = getPanBounds();
+  const deltaX = getZoomAdjustedDelta(
+    point.clientX - gesture.lastSinglePoint.clientX,
+    window.innerWidth
+  );
+  const deltaY = getZoomAdjustedDelta(
+    point.clientY - gesture.lastSinglePoint.clientY,
+    window.innerHeight
+  );
+  state.panX = clamp(state.panX + deltaX, bounds.minX, bounds.maxX);
+  state.panY = clamp(state.panY + deltaY, bounds.minY, bounds.maxY);
+  resetSinglePointerAnchor(point);
+  applyPreviewTransform();
+}
+
 function onPointerDown(event) {
+  if (event.pointerType === "mouse") return;
   gesture.pointers.set(event.pointerId, { clientX: event.clientX, clientY: event.clientY });
-  if (event.pointerType !== "mouse") video.setPointerCapture?.(event.pointerId);
+  video.setPointerCapture?.(event.pointerId);
 
   const points = [...gesture.pointers.values()];
   if (points.length === 1) {
-    resetSinglePointerAnchor(points[0]);
+    beginSwipe(points[0]);
     return;
   }
 
   if (points.length === 2) {
-    gesture.startDistance = getPointDistance(points);
-    gesture.startZoom = state.zoom;
-    gesture.startMidpoint = getMidpoint(points);
-    gesture.startPanX = state.panX;
-    gesture.startPanY = state.panY;
+    beginPinch(points);
   }
 }
 
@@ -152,31 +196,12 @@ function onPointerMove(event) {
   const points = [...gesture.pointers.values()];
 
   if (points.length >= 2 && gesture.startDistance && gesture.startMidpoint) {
-    const active = points.slice(0, 2);
-    const distance = getPointDistance(active);
-    const ratio = distance / gesture.startDistance;
-    state.zoom = clamp(gesture.startZoom * ratio, state.minZoom, state.maxZoom);
-
-    const midpoint = getMidpoint(active);
-    const bounds = getPanBounds();
-    const deltaX = getZoomAdjustedDelta(midpoint.x - gesture.startMidpoint.x, window.innerWidth);
-    const deltaY = getZoomAdjustedDelta(midpoint.y - gesture.startMidpoint.y, window.innerHeight);
-    state.panX = clamp(gesture.startPanX + deltaX, bounds.minX, bounds.maxX);
-    state.panY = clamp(gesture.startPanY + deltaY, bounds.minY, bounds.maxY);
-    applyPreviewTransform();
-    syncNativeZoom();
+    handlePinchMove(points.slice(0, 2));
     return;
   }
 
   if (points.length === 1 && gesture.lastSinglePoint) {
-    const point = points[0];
-    const bounds = getPanBounds();
-    const deltaX = getZoomAdjustedDelta(point.clientX - gesture.lastSinglePoint.clientX, window.innerWidth);
-    const deltaY = getZoomAdjustedDelta(point.clientY - gesture.lastSinglePoint.clientY, window.innerHeight);
-    state.panX = clamp(state.panX + deltaX, bounds.minX, bounds.maxX);
-    state.panY = clamp(state.panY + deltaY, bounds.minY, bounds.maxY);
-    resetSinglePointerAnchor(point);
-    applyPreviewTransform();
+    handleSwipeMove(points[0]);
   }
 }
 
@@ -195,15 +220,61 @@ function onPointerUpOrCancel(event) {
   if (points.length === 1) {
     gesture.startDistance = null;
     gesture.startMidpoint = null;
-    resetSinglePointerAnchor(points[0]);
+    beginSwipe(points[0]);
   }
 }
 
-video.addEventListener("pointerdown", onPointerDown, { passive: true });
-video.addEventListener("pointermove", onPointerMove, { passive: false });
-video.addEventListener("pointerup", onPointerUpOrCancel, { passive: true });
-video.addEventListener("pointercancel", onPointerUpOrCancel, { passive: true });
-video.addEventListener("pointerout", onPointerUpOrCancel, { passive: true });
+function onTouchStart(event) {
+  if (event.touches.length === 1) {
+    beginSwipe(event.touches[0]);
+    return;
+  }
+  if (event.touches.length >= 2) {
+    beginPinch([event.touches[0], event.touches[1]]);
+  }
+}
+
+function onTouchMove(event) {
+  event.preventDefault();
+  if (event.touches.length >= 2) {
+    handlePinchMove([event.touches[0], event.touches[1]]);
+    return;
+  }
+  if (event.touches.length === 1) {
+    handleSwipeMove(event.touches[0]);
+  }
+}
+
+function onTouchEnd(event) {
+  if (event.touches.length === 1) {
+    gesture.startDistance = null;
+    gesture.startMidpoint = null;
+    beginSwipe(event.touches[0]);
+    return;
+  }
+  if (event.touches.length === 0) {
+    gesture.startDistance = null;
+    gesture.startMidpoint = null;
+    resetSinglePointerAnchor(null);
+  }
+}
+
+const isIOS =
+  /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+  (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+
+if (isIOS) {
+  video.addEventListener("touchstart", onTouchStart, { passive: true });
+  video.addEventListener("touchmove", onTouchMove, { passive: false });
+  video.addEventListener("touchend", onTouchEnd, { passive: true });
+  video.addEventListener("touchcancel", onTouchEnd, { passive: true });
+} else {
+  video.addEventListener("pointerdown", onPointerDown, { passive: true });
+  video.addEventListener("pointermove", onPointerMove, { passive: false });
+  video.addEventListener("pointerup", onPointerUpOrCancel, { passive: true });
+  video.addEventListener("pointercancel", onPointerUpOrCancel, { passive: true });
+  video.addEventListener("pointerout", onPointerUpOrCancel, { passive: true });
+}
 window.addEventListener("resize", applyPreviewTransform);
 
 if (!navigator.mediaDevices?.getUserMedia) {
