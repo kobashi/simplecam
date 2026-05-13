@@ -4,9 +4,6 @@
   --hud: rgba(12, 12, 12, 0.5);
   --hud-border: rgba(255, 255, 255, 0.18);
   --text: #f5f0e8;
-  --accent: #f7b955;
-  --frame-width: min(36vw, 15rem);
-  --frame-height: calc(var(--frame-width) * 1.3333);
 }
 
 * {
@@ -53,6 +50,7 @@ body {
   transform-origin: center center;
   will-change: transform;
   filter: saturate(1.02) contrast(1.03);
+  touch-action: none;
 }
 
 .preview-vignette {
@@ -70,27 +68,6 @@ body {
   pointer-events: none;
 }
 
-.framing-overlay {
-  position: absolute;
-  inset: env(safe-area-inset-top) 0 env(safe-area-inset-bottom) 0;
-  pointer-events: none;
-}
-
-.mini-window {
-  position: absolute;
-  left: calc(50% - var(--frame-width) / 2);
-  top: calc(50% - var(--frame-height) / 2);
-  width: var(--frame-width);
-  height: var(--frame-height);
-  border-radius: 0.9rem;
-  border: 2px solid rgba(255, 255, 255, 0.94);
-  box-shadow:
-    0 0 0 999px rgba(0, 0, 0, 0.22),
-    0 0 0 1px rgba(255, 255, 255, 0.22) inset,
-    0 1rem 2rem rgba(0, 0, 0, 0.34);
-  background: rgba(255, 255, 255, 0.03);
-}
-
 .status-panel {
   position: absolute;
   left: 50%;
@@ -105,10 +82,4 @@ body {
   font-size: 0.9rem;
   text-align: center;
   backdrop-filter: blur(10px);
-}
-
-@media (orientation: landscape) {
-  :root {
-    --frame-width: min(28vw, 15rem);
-  }
 }

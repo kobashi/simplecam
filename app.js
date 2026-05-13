@@ -1,5 +1,4 @@
 const video = document.getElementById("camera");
-const miniWindow = document.querySelector(".mini-window");
 const statusPanel = document.getElementById("statusPanel");
 
 const state = {
@@ -13,14 +12,13 @@ const state = {
 };
 
 const gesture = {
-  mode: null,
-  startDistance: 0,
+  pointers: new Map(),
+  startDistance: null,
   startZoom: 1,
   startMidpoint: null,
   startPanX: 0,
   startPanY: 0,
-  startPointerX: 0,
-  startPointerY: 0,
+  lastSinglePoint: null,
 };
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
@@ -96,7 +94,6 @@ function applyPreviewTransform() {
   const scale = capabilitiesSupportZoom() ? 1 : state.zoom;
   video.style.objectPosition = `${50 + state.panX}% ${50 + state.panY}%`;
   video.style.transform = `scale(${scale})`;
-  miniWindow.style.transform = "translate(0, 0)";
 }
 
 function capabilitiesSupportZoom() {
@@ -104,13 +101,13 @@ function capabilitiesSupportZoom() {
   return Boolean(capabilities.zoom);
 }
 
-function getTouchDistance(touches) {
-  const [a, b] = touches;
+function getPointDistance(points) {
+  const [a, b] = points;
   return Math.hypot(b.clientX - a.clientX, b.clientY - a.clientY);
 }
 
-function getMidpoint(touches) {
-  const [a, b] = touches;
+function getMidpoint(points) {
+  const [a, b] = points;
   return {
     x: (a.clientX + b.clientX) / 2,
     y: (a.clientY + b.clientY) / 2,
@@ -122,78 +119,91 @@ function getZoomAdjustedDelta(deltaPx, axisSizePx) {
   return percent / Math.max(state.zoom, 1);
 }
 
-function onTouchStart(event) {
-  if (event.touches.length === 2) {
-    gesture.mode = "pinch";
-    gesture.startDistance = getTouchDistance(event.touches);
-    gesture.startZoom = state.zoom;
-    gesture.startMidpoint = getMidpoint(event.touches);
-    gesture.startPanX = state.panX;
-    gesture.startPanY = state.panY;
+function resetSinglePointerAnchor(point) {
+  gesture.lastSinglePoint = point
+    ? { clientX: point.clientX, clientY: point.clientY }
+    : null;
+}
+
+function onPointerDown(event) {
+  gesture.pointers.set(event.pointerId, { clientX: event.clientX, clientY: event.clientY });
+  if (event.pointerType !== "mouse") video.setPointerCapture?.(event.pointerId);
+
+  const points = [...gesture.pointers.values()];
+  if (points.length === 1) {
+    resetSinglePointerAnchor(points[0]);
     return;
   }
 
-  if (event.touches.length === 1) {
-    gesture.mode = "swipe";
-    gesture.startPointerX = event.touches[0].clientX;
-    gesture.startPointerY = event.touches[0].clientY;
+  if (points.length === 2) {
+    gesture.startDistance = getPointDistance(points);
+    gesture.startZoom = state.zoom;
+    gesture.startMidpoint = getMidpoint(points);
     gesture.startPanX = state.panX;
     gesture.startPanY = state.panY;
   }
 }
 
-function onTouchMove(event) {
+function onPointerMove(event) {
+  if (!gesture.pointers.has(event.pointerId)) return;
   event.preventDefault();
 
-  if (gesture.mode === "pinch" && event.touches.length === 2) {
-    const distance = getTouchDistance(event.touches);
+  gesture.pointers.set(event.pointerId, { clientX: event.clientX, clientY: event.clientY });
+  const points = [...gesture.pointers.values()];
+
+  if (points.length >= 2 && gesture.startDistance && gesture.startMidpoint) {
+    const active = points.slice(0, 2);
+    const distance = getPointDistance(active);
     const ratio = distance / gesture.startDistance;
     state.zoom = clamp(gesture.startZoom * ratio, state.minZoom, state.maxZoom);
 
-    const midpoint = getMidpoint(event.touches);
+    const midpoint = getMidpoint(active);
     const bounds = getPanBounds();
     const deltaX = getZoomAdjustedDelta(midpoint.x - gesture.startMidpoint.x, window.innerWidth);
     const deltaY = getZoomAdjustedDelta(midpoint.y - gesture.startMidpoint.y, window.innerHeight);
-
     state.panX = clamp(gesture.startPanX + deltaX, bounds.minX, bounds.maxX);
     state.panY = clamp(gesture.startPanY + deltaY, bounds.minY, bounds.maxY);
-
     applyPreviewTransform();
     syncNativeZoom();
     return;
   }
 
-  if (gesture.mode === "swipe" && event.touches.length === 1) {
-    const touch = event.touches[0];
+  if (points.length === 1 && gesture.lastSinglePoint) {
+    const point = points[0];
     const bounds = getPanBounds();
-    const deltaX = getZoomAdjustedDelta(touch.clientX - gesture.startPointerX, window.innerWidth);
-    const deltaY = getZoomAdjustedDelta(touch.clientY - gesture.startPointerY, window.innerHeight);
-
-    state.panX = clamp(gesture.startPanX + deltaX, bounds.minX, bounds.maxX);
-    state.panY = clamp(gesture.startPanY + deltaY, bounds.minY, bounds.maxY);
+    const deltaX = getZoomAdjustedDelta(point.clientX - gesture.lastSinglePoint.clientX, window.innerWidth);
+    const deltaY = getZoomAdjustedDelta(point.clientY - gesture.lastSinglePoint.clientY, window.innerHeight);
+    state.panX = clamp(state.panX + deltaX, bounds.minX, bounds.maxX);
+    state.panY = clamp(state.panY + deltaY, bounds.minY, bounds.maxY);
+    resetSinglePointerAnchor(point);
     applyPreviewTransform();
   }
 }
 
-function onTouchEnd(event) {
-  if (event.touches.length === 0) {
-    gesture.mode = null;
+function onPointerUpOrCancel(event) {
+  gesture.pointers.delete(event.pointerId);
+  video.releasePointerCapture?.(event.pointerId);
+
+  const points = [...gesture.pointers.values()];
+  if (points.length === 0) {
+    gesture.startDistance = null;
+    gesture.startMidpoint = null;
+    resetSinglePointerAnchor(null);
     return;
   }
 
-  if (event.touches.length === 1) {
-    gesture.mode = "swipe";
-    gesture.startPointerX = event.touches[0].clientX;
-    gesture.startPointerY = event.touches[0].clientY;
-    gesture.startPanX = state.panX;
-    gesture.startPanY = state.panY;
+  if (points.length === 1) {
+    gesture.startDistance = null;
+    gesture.startMidpoint = null;
+    resetSinglePointerAnchor(points[0]);
   }
 }
 
-document.addEventListener("touchstart", onTouchStart, { passive: true });
-document.addEventListener("touchmove", onTouchMove, { passive: false });
-document.addEventListener("touchend", onTouchEnd, { passive: true });
-document.addEventListener("touchcancel", onTouchEnd, { passive: true });
+video.addEventListener("pointerdown", onPointerDown, { passive: true });
+video.addEventListener("pointermove", onPointerMove, { passive: false });
+video.addEventListener("pointerup", onPointerUpOrCancel, { passive: true });
+video.addEventListener("pointercancel", onPointerUpOrCancel, { passive: true });
+video.addEventListener("pointerout", onPointerUpOrCancel, { passive: true });
 window.addEventListener("resize", applyPreviewTransform);
 
 if (!navigator.mediaDevices?.getUserMedia) {
