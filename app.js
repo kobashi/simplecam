@@ -96,7 +96,7 @@ function applyPreviewTransform() {
   const scale = capabilitiesSupportZoom() ? 1 : state.zoom;
   video.style.objectPosition = `${50 + state.panX}% ${50 + state.panY}%`;
   video.style.transform = `scale(${scale})`;
-  miniWindow.style.transform = `translate(calc(${state.panX * -0.24}% + 0px), calc(${state.panY * -0.24}% + 0px))`;
+  miniWindow.style.transform = "translate(0, 0)";
 }
 
 function capabilitiesSupportZoom() {
@@ -115,6 +115,11 @@ function getMidpoint(touches) {
     x: (a.clientX + b.clientX) / 2,
     y: (a.clientY + b.clientY) / 2,
   };
+}
+
+function getZoomAdjustedDelta(deltaPx, axisSizePx) {
+  const percent = (deltaPx / axisSizePx) * 100;
+  return percent / Math.max(state.zoom, 1);
 }
 
 function onTouchStart(event) {
@@ -147,8 +152,8 @@ function onTouchMove(event) {
 
     const midpoint = getMidpoint(event.touches);
     const bounds = getPanBounds();
-    const deltaX = ((midpoint.x - gesture.startMidpoint.x) / window.innerWidth) * 100;
-    const deltaY = ((midpoint.y - gesture.startMidpoint.y) / window.innerHeight) * 100;
+    const deltaX = getZoomAdjustedDelta(midpoint.x - gesture.startMidpoint.x, window.innerWidth);
+    const deltaY = getZoomAdjustedDelta(midpoint.y - gesture.startMidpoint.y, window.innerHeight);
 
     state.panX = clamp(gesture.startPanX + deltaX, bounds.minX, bounds.maxX);
     state.panY = clamp(gesture.startPanY + deltaY, bounds.minY, bounds.maxY);
@@ -161,8 +166,8 @@ function onTouchMove(event) {
   if (gesture.mode === "swipe" && event.touches.length === 1) {
     const touch = event.touches[0];
     const bounds = getPanBounds();
-    const deltaX = ((touch.clientX - gesture.startPointerX) / window.innerWidth) * 100;
-    const deltaY = ((touch.clientY - gesture.startPointerY) / window.innerHeight) * 100;
+    const deltaX = getZoomAdjustedDelta(touch.clientX - gesture.startPointerX, window.innerWidth);
+    const deltaY = getZoomAdjustedDelta(touch.clientY - gesture.startPointerY, window.innerHeight);
 
     state.panX = clamp(gesture.startPanX + deltaX, bounds.minX, bounds.maxX);
     state.panY = clamp(gesture.startPanY + deltaY, bounds.minY, bounds.maxY);
