@@ -75,6 +75,23 @@ body {
   background: transparent;
 }
 
+.fullscreen-toggle {
+  position: absolute;
+  top: calc(env(safe-area-inset-top) + 1rem);
+  right: 1rem;
+  z-index: 2;
+  min-width: 4.75rem;
+  padding: 0.8rem 1rem;
+  border: 1px solid var(--hud-border);
+  border-radius: 999px;
+  background: var(--hud);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.78rem;
+  letter-spacing: 0.18em;
+  backdrop-filter: blur(10px);
+}
+
 .status-panel {
   position: absolute;
   left: 50%;
@@ -90,4 +107,9 @@ body {
   text-align: center;
   backdrop-filter: blur(10px);
   pointer-events: none;
+  z-index: 2;
+}
+
+.status-panel.is-hidden {
+  display: none;
 }

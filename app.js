@@ -1,6 +1,7 @@
 const video = document.getElementById("camera");
 const previewShell = document.querySelector(".preview-shell");
 const gestureSurface = document.getElementById("gestureSurface");
+const fullscreenToggle = document.getElementById("fullscreenToggle");
 const statusPanel = document.getElementById("statusPanel");
 
 const state = {
@@ -30,6 +31,26 @@ const PAN_SENSITIVITY = 1.2;
 
 function setStatus(message) {
   statusPanel.textContent = message;
+  statusPanel.classList.toggle("is-hidden", !message);
+}
+
+function updateFullscreenButton() {
+  const isFullscreen = Boolean(document.fullscreenElement);
+  fullscreenToggle.textContent = isFullscreen ? "EXIT" : "FULL";
+}
+
+async function toggleFullscreen() {
+  try {
+    if (document.fullscreenElement) {
+      await document.exitFullscreen();
+      return;
+    }
+
+    await previewShell.requestFullscreen?.();
+  } catch (error) {
+    console.error(error);
+    setStatus("全画面表示に切り替えできませんでした。");
+  }
 }
 
 async function setupCamera() {
@@ -51,7 +72,7 @@ async function setupCamera() {
     await video.play();
     configureTrackCapabilities(track);
     applyPreviewTransform();
-    setStatus("ピンチでズーム / スワイプで撮影範囲を移動");
+    setStatus("");
   } catch (error) {
     console.error(error);
     setStatus("カメラにアクセスできません。Safari で HTTPS または localhost を確認してください。");
@@ -61,7 +82,7 @@ async function setupCamera() {
 function configureTrackCapabilities(track) {
   void track;
   state.minZoom = 1;
-  state.maxZoom = 3;
+  state.maxZoom = 9;
   state.zoom = 1;
 }
 
@@ -258,6 +279,9 @@ if (prefersTouchInput) {
   window.addEventListener("pointercancel", onPointerUpOrCancel, { passive: true });
 }
 window.addEventListener("resize", applyPreviewTransform);
+document.addEventListener("fullscreenchange", updateFullscreenButton);
+fullscreenToggle.addEventListener("click", toggleFullscreen);
+updateFullscreenButton();
 
 if (!navigator.mediaDevices?.getUserMedia) {
   setStatus("このブラウザはカメラプレビューに対応していません。");

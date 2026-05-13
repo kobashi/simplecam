@@ -22,9 +22,15 @@
         ></video>
         <div class="preview-vignette" aria-hidden="true"></div>
         <div id="gestureSurface" class="gesture-surface" aria-hidden="true"></div>
-        <div class="status-panel" id="statusPanel" aria-live="polite">
-          リアカメラを起動中...
-        </div>
+        <button
+          id="fullscreenToggle"
+          class="fullscreen-toggle"
+          type="button"
+          aria-label="Toggle fullscreen"
+        >
+          FULL
+        </button>
+        <div class="status-panel is-hidden" id="statusPanel" aria-live="polite"></div>
       </section>
     </main>
 
