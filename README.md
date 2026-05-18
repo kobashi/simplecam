@@ -1,31 +1,51 @@
-# Camera Frame Preview
+# SimpleCam
 
-リアカメラを全画面プレビューしながら、ピンチでズーム、スワイプで撮影範囲を移動する iPad 向けのブラウザアプリです。録画機能は含みません。
+## Ver. 1.0
 
-## Files
+リアカメラを全画面でプレビューする、タッチ操作専用のブラウザアプリです。録画や静止画保存は行わず、プレビュー表示と表示範囲の調整に特化しています。
 
-- `index.html`: アプリ本体
-- `styles.css`: 全画面プレビューとオーバーレイ UI
-- `app.js`: カメラ起動とジェスチャー制御
+## Current Spec
+
+- 全画面プレビューがそのまま撮影範囲です。
+- 対応操作は `ピンチ` によるズーム、`スワイプ` によるパンです。
+- ズーム倍率は `1x` から `9x` です。
+- 右上の `FULL` ボタンで全画面表示に切り替えできます。
+- 操作説明テキストは常時表示せず、エラー時のみメッセージを表示します。
+
+## Supported Devices
+
+- iPad
+- Android タブレット / Android スマートフォン
+
+タッチ端末での利用を前提としており、マウス操作は対象外です。
 
 ## Usage
 
-1. HTTPS または `localhost` で配信します。
-2. Safari で開いてカメラ権限を許可します。
-3. ピンチでズーム、スワイプで撮影範囲を移動します。
+1. HTTPS または `localhost` でアプリを開きます。
+2. ブラウザのカメラ権限を許可します。
+3. リアカメラの全画面プレビューを確認します。
+4. ピンチでズーム、スワイプで表示中心を移動します。
+5. 必要に応じて `FULL` ボタンで全画面表示に切り替えます。
 
-## GitHub Pages
+## Files
 
-`.github/workflows/deploy-pages.yml` を追加してあり、`main` ブランチへの push でそのまま GitHub Pages にデプロイされます。
+- `index.html`: UI 構造
+- `styles.css`: 全画面表示とオーバーレイ UI
+- `app.js`: カメラ起動、ズーム、パン、全画面切り替え
+- `.github/workflows/deploy-pages.yml`: GitHub Pages 自動デプロイ
 
-1. GitHub で空のリポジトリを作成します。
-2. このディレクトリをそのリポジトリに push します。
-3. GitHub の `Settings > Pages` で `Build and deployment` の `Source` を `GitHub Actions` にします。
-4. `main` に push すると Actions が走り、公開 URL が発行されます。
+## Deployment
 
-公開後は `https://<user>.github.io/<repo>/` でアクセスできます。カメラを使うため、GitHub Pages の HTTPS 配信と相性が良い構成です。
+`main` ブランチへ push すると GitHub Pages に自動デプロイされます。
 
-## Note
+- Repository: `https://github.com/kobashi/simplecam`
+- Publish URL: `https://kobashi.github.io/simplecam/`
 
-- iPad Safari では `getUserMedia` のためにセキュアコンテキストが必要です。
-- ブラウザが `MediaTrackCapabilities.zoom` をサポートしている場合はネイティブズームを使い、未対応時は CSS ズームにフォールバックします。
+GitHub 側では `Settings > Pages > Build and deployment > Source` を `GitHub Actions` に設定します。
+
+## Notes
+
+- カメラ利用にはセキュアコンテキストが必要です。`https://` または `localhost` でアクセスしてください。
+- リアカメラは `facingMode: environment` を優先して取得します。
+- ズームとパンはブラウザ上の表示変形として実装しています。
+- 端末やブラウザによって、全画面 API の挙動や見た目が一部異なることがあります。
