@@ -1,9 +1,10 @@
 :root {
   color-scheme: dark;
   --bg: #040404;
-  --hud: rgba(12, 12, 12, 0.5);
-  --hud-border: rgba(255, 255, 255, 0.18);
-  --text: #f5f0e8;
+  --hud: rgba(64, 64, 64, 0.26);
+  --hud-border: rgba(210, 210, 210, 0.16);
+  --text: rgba(236, 236, 236, 0.72);
+  --muted: rgba(220, 220, 220, 0.5);
 }
 
 * {
@@ -40,17 +41,37 @@ body {
   background: #000;
 }
 
-.camera-feed {
+.preview-stage {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.camera-feed,
+.filtered-preview {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
-  object-fit: cover;
-  object-position: center center;
   transform-origin: center center;
   will-change: transform;
+}
+
+.camera-feed {
+  object-fit: cover;
+  object-position: center center;
   filter: saturate(1.02) contrast(1.03);
   touch-action: none;
+}
+
+.filtered-preview {
+  z-index: 1;
+  pointer-events: none;
+}
+
+.camera-feed.is-hidden,
+.filtered-preview.is-hidden {
+  opacity: 0;
 }
 
 .preview-vignette {
@@ -73,39 +94,126 @@ body {
   inset: 0;
   touch-action: none;
   background: transparent;
+  z-index: 2;
+}
+
+.trail-controls {
+  position: absolute;
+  left: 50%;
+  bottom: calc(env(safe-area-inset-bottom) + 2.45rem);
+  display: grid;
+  gap: 0.32rem;
+  width: min(56vw, 12rem);
+  padding: 0.42rem 0.5rem;
+  border: 1px solid var(--hud-border);
+  border-radius: 0.5rem;
+  background: var(--hud);
+  backdrop-filter: blur(6px);
+  transform: translateX(-50%);
+  z-index: 3;
+}
+
+.trail-slider {
+  display: grid;
+  grid-template-columns: 2.7rem 1fr auto;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--text);
+}
+
+.trail-slider-label,
+.trail-slider-value {
+  font-size: 0.36rem;
+  letter-spacing: 0.12em;
+}
+
+.trail-slider-value {
+  min-width: 1.9rem;
+  text-align: right;
+  color: var(--muted);
+}
+
+.trail-slider-input {
+  width: 100%;
+  height: 0.5rem;
+  accent-color: rgba(180, 180, 180, 0.55);
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  opacity: 0.72;
+}
+
+.trail-slider-input::-webkit-slider-runnable-track {
+  height: 0.12rem;
+  border-radius: 999px;
+  background: rgba(190, 190, 190, 0.28);
+}
+
+.trail-slider-input::-webkit-slider-thumb {
+  width: 0.48rem;
+  height: 0.48rem;
+  margin-top: -0.18rem;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(210, 210, 210, 0.62);
+  box-shadow: none;
+  -webkit-appearance: none;
+}
+
+.trail-slider-input::-moz-range-track {
+  height: 0.12rem;
+  border-radius: 999px;
+  background: rgba(190, 190, 190, 0.28);
+}
+
+.trail-slider-input::-moz-range-progress {
+  height: 0.12rem;
+  border-radius: 999px;
+  background: rgba(210, 210, 210, 0.36);
+}
+
+.trail-slider-input::-moz-range-thumb {
+  width: 0.48rem;
+  height: 0.48rem;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(210, 210, 210, 0.62);
 }
 
 .fullscreen-toggle {
-  position: absolute;
-  top: calc(env(safe-area-inset-top) + 1rem);
-  right: 1rem;
-  z-index: 2;
-  min-width: 4.75rem;
-  padding: 0.8rem 1rem;
+  min-width: 2.38rem;
+  padding: 0.4rem 0.5rem;
   border: 1px solid var(--hud-border);
   border-radius: 999px;
   background: var(--hud);
   color: var(--text);
   font: inherit;
-  font-size: 0.78rem;
-  letter-spacing: 0.18em;
-  backdrop-filter: blur(10px);
+  font-size: 0.39rem;
+  letter-spacing: 0.14em;
+  backdrop-filter: blur(5px);
+}
+
+.fullscreen-toggle {
+  position: absolute;
+  top: calc(env(safe-area-inset-top) + 0.5rem);
+  right: 0.5rem;
+  z-index: 3;
 }
 
 .status-panel {
   position: absolute;
   left: 50%;
-  bottom: calc(env(safe-area-inset-bottom) + 1.2rem);
+  bottom: calc(env(safe-area-inset-bottom) + 5.3rem);
   transform: translateX(-50%);
-  max-width: min(86vw, 32rem);
-  padding: 0.8rem 1rem;
-  border-radius: 1rem;
+  max-width: min(62vw, 16rem);
+  padding: 0.4rem 0.5rem;
+  border-radius: 0.5rem;
   border: 1px solid var(--hud-border);
   background: var(--hud);
   color: var(--text);
-  font-size: 0.9rem;
+  font-size: 0.45rem;
   text-align: center;
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(5px);
   pointer-events: none;
   z-index: 2;
 }
