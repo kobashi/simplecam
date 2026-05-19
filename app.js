@@ -48,10 +48,10 @@ const gesture = {
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const PAN_SENSITIVITY = 1.2;
-const CONTRAST_GAIN = 1.85;
-const CONTRAST_OFFSET = 18 / 255;
+const CONTRAST_MAX_GAIN = 1.85;
+const CONTRAST_MAX_OFFSET = 18 / 255;
+const CONTRAST_THRESHOLD_MAX = 0.58;
 const TRAIL_MAX_BLEND = 0.9925;
-const TRAIL_MAX_PERSISTENCE = 1 / (1 - TRAIL_MAX_BLEND);
 const TRAIL_DELAY_BUFFER_SIZE = 30;
 const TRAIL_DELAY_BASE_INTERVAL_MS = 1000 / TRAIL_DELAY_BUFFER_SIZE;
 
@@ -76,6 +76,7 @@ const ACCUMULATE_FRAGMENT_SHADER_SOURCE = `
   uniform vec2 u_uvOffset;
   uniform float u_contrastEnabled;
   uniform float u_threshold;
+  uniform float u_contrastStrength;
   uniform float u_gain;
   uniform float u_lift;
   uniform float u_trailEnabled;
@@ -91,7 +92,8 @@ const ACCUMULATE_FRAGMENT_SHADER_SOURCE = `
     }
 
     vec3 normalizedColor = (color - vec3(u_threshold)) / max(1.0 - u_threshold, 0.0001);
-    return clamp(((normalizedColor - vec3(0.5)) * u_gain) + vec3(0.5 + u_lift), 0.0, 1.0);
+    vec3 boostedColor = clamp(((normalizedColor - vec3(0.5)) * u_gain) + vec3(0.5 + u_lift), 0.0, 1.0);
+    return mix(color, boostedColor, u_contrastStrength);
   }
 
   void main() {
@@ -233,6 +235,7 @@ function createGlResources() {
   const uvOffsetLocation = gl.getUniformLocation(accumulateProgram, "u_uvOffset");
   const contrastEnabledLocation = gl.getUniformLocation(accumulateProgram, "u_contrastEnabled");
   const thresholdLocation = gl.getUniformLocation(accumulateProgram, "u_threshold");
+  const contrastStrengthLocation = gl.getUniformLocation(accumulateProgram, "u_contrastStrength");
   const gainLocation = gl.getUniformLocation(accumulateProgram, "u_gain");
   const liftLocation = gl.getUniformLocation(accumulateProgram, "u_lift");
   const trailEnabledLocation = gl.getUniformLocation(accumulateProgram, "u_trailEnabled");
@@ -278,8 +281,8 @@ function createGlResources() {
 
   gl.uniform1i(videoTextureLocation, 0);
   gl.uniform1i(trailTextureLocation, 1);
-  gl.uniform1f(gainLocation, CONTRAST_GAIN);
-  gl.uniform1f(liftLocation, CONTRAST_OFFSET);
+  gl.uniform1f(gainLocation, CONTRAST_MAX_GAIN);
+  gl.uniform1f(liftLocation, CONTRAST_MAX_OFFSET);
 
   gl.useProgram(displayProgram);
   bindQuadAttributes(displayProgram, quadBuffer);
@@ -305,6 +308,7 @@ function createGlResources() {
     uvOffsetLocation,
     contrastEnabledLocation,
     thresholdLocation,
+    contrastStrengthLocation,
     trailEnabledLocation,
     trailAmountLocation,
     displayTextureLocation,
@@ -334,17 +338,14 @@ function updateTrailControls() {
 }
 
 function shouldRenderFilteredPreview() {
-  return filtersAvailable && (
-    state.contrastThresholdAmount > 0 ||
-    state.trailDelayAmount > 0 ||
-    state.trailAmount > 0
-  );
+  return filtersAvailable;
 }
 
 function syncFilterVisibility() {
   const filteredActive = shouldRenderFilteredPreview();
   video.classList.toggle("is-hidden", filteredActive);
   filteredPreview.classList.toggle("is-hidden", !filteredActive);
+  filteredPreview.style.opacity = filteredActive ? "1" : "0";
 }
 
 function resetTrailTexture() {
@@ -485,8 +486,16 @@ function getCoverUvTransform() {
 
 function getTrailAmount(value) {
   const normalizedValue = clamp(value / 2000, 0, 1);
-  const persistence = 1 + (normalizedValue * (TRAIL_MAX_PERSISTENCE - 1));
-  return clamp(1 - (1 / persistence), 0, TRAIL_MAX_BLEND);
+  return Math.pow(normalizedValue, 0.52) * TRAIL_MAX_BLEND;
+}
+
+function getContrastStrength(value) {
+  const normalizedValue = clamp(value / 255, 0, 1);
+  return normalizedValue * normalizedValue;
+}
+
+function getContrastThreshold(value) {
+  return getContrastStrength(value) * CONTRAST_THRESHOLD_MAX;
 }
 
 function getDelaySettings() {
@@ -578,7 +587,8 @@ function renderFilteredFrame(now = performance.now()) {
 
   const contrastEnabled = state.contrastThresholdAmount > 0;
   const trailEnabled = state.trailAmount > 0;
-  const contrastThreshold = state.contrastThresholdAmount / 255;
+  const contrastStrength = getContrastStrength(state.contrastThresholdAmount);
+  const contrastThreshold = getContrastThreshold(state.contrastThresholdAmount);
   const trailAmount = trailEnabled ? getTrailAmount(state.trailAmount) : 0;
 
   gl.activeTexture(gl.TEXTURE0);
@@ -619,6 +629,7 @@ function renderFilteredFrame(now = performance.now()) {
   gl.uniform2f(glResources.uvOffsetLocation, uvTransform.offsetX, uvTransform.offsetY);
   gl.uniform1f(glResources.contrastEnabledLocation, contrastEnabled ? 1 : 0);
   gl.uniform1f(glResources.thresholdLocation, contrastThreshold);
+  gl.uniform1f(glResources.contrastStrengthLocation, contrastStrength);
   gl.uniform1f(glResources.trailEnabledLocation, trailEnabled ? 1 : 0);
   gl.uniform1f(glResources.trailAmountLocation, trailAmount);
   gl.drawArrays(gl.TRIANGLES, 0, 6);

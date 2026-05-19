@@ -100,11 +100,12 @@ body {
 .trail-controls {
   position: absolute;
   left: 50%;
-  bottom: calc(env(safe-area-inset-bottom) + 2.45rem);
+  bottom: calc(env(safe-area-inset-bottom) + 0.5rem);
   display: grid;
-  gap: 0.32rem;
-  width: min(56vw, 12rem);
-  padding: 0.42rem 0.5rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.58rem;
+  width: min(92vw, 34rem);
+  padding: 0.46rem 0.58rem;
   border: 1px solid var(--hud-border);
   border-radius: 0.5rem;
   background: var(--hud);
@@ -115,10 +116,22 @@ body {
 
 .trail-slider {
   display: grid;
-  grid-template-columns: 2.7rem 1fr auto;
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+    "label value"
+    "input input";
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.16rem 0.32rem;
+  min-width: 0;
   color: var(--text);
+}
+
+.trail-slider-label {
+  grid-area: label;
+}
+
+.trail-slider-input {
+  grid-area: input;
 }
 
 .trail-slider-label,
@@ -128,6 +141,7 @@ body {
 }
 
 .trail-slider-value {
+  grid-area: value;
   min-width: 1.9rem;
   text-align: right;
   color: var(--muted);
@@ -203,7 +217,7 @@ body {
 .status-panel {
   position: absolute;
   left: 50%;
-  bottom: calc(env(safe-area-inset-bottom) + 5.3rem);
+  bottom: calc(env(safe-area-inset-bottom) + 3.4rem);
   transform: translateX(-50%);
   max-width: min(62vw, 16rem);
   padding: 0.4rem 0.5rem;
