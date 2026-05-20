@@ -149,7 +149,9 @@ body {
 
 .trail-slider-input {
   width: 100%;
-  height: 0.5rem;
+  height: 0.64rem;
+  margin: -0.18rem 0;
+  padding: 0.18rem 0;
   accent-color: rgba(180, 180, 180, 0.55);
   appearance: none;
   -webkit-appearance: none;
@@ -164,9 +166,9 @@ body {
 }
 
 .trail-slider-input::-webkit-slider-thumb {
-  width: 0.48rem;
-  height: 0.48rem;
-  margin-top: -0.18rem;
+  width: 0.66rem;
+  height: 0.66rem;
+  margin-top: -0.27rem;
   border: 0;
   border-radius: 50%;
   background: rgba(210, 210, 210, 0.62);
@@ -187,8 +189,8 @@ body {
 }
 
 .trail-slider-input::-moz-range-thumb {
-  width: 0.48rem;
-  height: 0.48rem;
+  width: 0.66rem;
+  height: 0.66rem;
   border: 0;
   border-radius: 50%;
   background: rgba(210, 210, 210, 0.62);
