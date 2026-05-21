@@ -35,7 +35,7 @@ const state = {
   trailAmount: Number(trailAmountSlider.value),
   preferredFacingMode: "environment",
   activeFacingMode: "environment",
-  canSwitchCamera: false,
+  canSwitchCamera: true,
   isSwitchingCamera: false,
 };
 
@@ -447,11 +447,10 @@ async function openCameraStream(facingMode) {
 
 async function refreshAvailableCameras() {
   try {
-    const devices = await navigator.mediaDevices.enumerateDevices();
-    const videoInputs = devices.filter((device) => device.kind === "videoinput");
-    state.canSwitchCamera = videoInputs.length > 1;
+    await navigator.mediaDevices.enumerateDevices();
+    state.canSwitchCamera = true;
   } catch (error) {
-    state.canSwitchCamera = false;
+    state.canSwitchCamera = true;
   }
 
   updateCameraToggle();
@@ -459,10 +458,27 @@ async function refreshAvailableCameras() {
 
 async function startCameraStream(facingMode = state.preferredFacingMode) {
   const previousStream = state.stream;
-  const stream = await openCameraStream(facingMode);
+  let stream;
+
+  try {
+    stream = await openCameraStream(facingMode);
+  } catch (error) {
+    if (!previousStream) {
+      throw error;
+    }
+
+    previousStream.getTracks().forEach((activeTrack) => activeTrack.stop());
+    state.stream = null;
+    state.track = null;
+    video.srcObject = null;
+    stream = await openCameraStream(facingMode);
+  }
+
   const [track] = stream.getVideoTracks();
   const settings = track.getSettings();
-  const detectedFacingMode = settings.facingMode === "user" ? "user" : "environment";
+  const detectedFacingMode = settings.facingMode === "user" || facingMode === "user"
+    ? "user"
+    : "environment";
 
   previousStream?.getTracks().forEach((activeTrack) => activeTrack.stop());
   state.stream = stream;
@@ -516,6 +532,7 @@ async function toggleCamera() {
     setStatus("");
   } catch (error) {
     console.error(error);
+    state.canSwitchCamera = false;
     setStatus("カメラを切り替えできませんでした。");
   } finally {
     state.isSwitchingCamera = false;
