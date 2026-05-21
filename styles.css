@@ -197,6 +197,7 @@ body {
   background: rgba(210, 210, 210, 0.62);
 }
 
+.audio-toggle,
 .camera-toggle,
 .fullscreen-toggle {
   min-width: 2.38rem;
@@ -209,6 +210,11 @@ body {
   font-size: 0.39rem;
   letter-spacing: 0.14em;
   backdrop-filter: blur(5px);
+}
+
+.audio-toggle[aria-pressed="true"] {
+  background: rgba(142, 142, 142, 0.36);
+  color: rgba(255, 255, 255, 0.84);
 }
 
 .top-controls {

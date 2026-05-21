@@ -2,6 +2,7 @@ const video = document.getElementById("camera");
 const filteredPreview = document.getElementById("filteredPreview");
 const previewShell = document.querySelector(".preview-shell");
 const gestureSurface = document.getElementById("gestureSurface");
+const audioToggle = document.getElementById("audioToggle");
 const cameraToggle = document.getElementById("cameraToggle");
 const fullscreenToggle = document.getElementById("fullscreenToggle");
 const contrastThresholdSlider = document.getElementById("contrastThresholdSlider");
@@ -37,6 +38,10 @@ const state = {
   activeFacingMode: "environment",
   canSwitchCamera: true,
   isSwitchingCamera: false,
+  audioEnabled: false,
+  audioContext: null,
+  audioMasterGain: null,
+  audioVoices: null,
 };
 
 const gesture = {
@@ -59,6 +64,26 @@ const CONTRAST_THRESHOLD_MAX = 0.58;
 const TRAIL_MAX_BLEND = 0.9925;
 const TRAIL_DELAY_BUFFER_SIZE = 30;
 const TRAIL_DELAY_BASE_INTERVAL_MS = 1000 / TRAIL_DELAY_BUFFER_SIZE;
+const AUDIO_ANALYSIS_WIDTH = 64;
+const AUDIO_ANALYSIS_HEIGHT = 36;
+const AUDIO_MAX_GAIN = 0.18;
+const AUDIO_FM_INDEX = 2.7;
+const AUDIO_PITCH_SATURATION_THRESHOLD = 0.12;
+const AUDIO_NOTE_RATIOS = [1, 5 / 4, 3 / 2, 15 / 8];
+const AUDIO_BASE_C = 261.63;
+const AUDIO_PLANES = [
+  { key: "b", channel: 2, octaveOffset: -1 },
+  { key: "g", channel: 1, octaveOffset: 0 },
+  { key: "r", channel: 0, octaveOffset: 1 },
+];
+
+const audioAnalysisCanvas = document.createElement("canvas");
+audioAnalysisCanvas.width = AUDIO_ANALYSIS_WIDTH;
+audioAnalysisCanvas.height = AUDIO_ANALYSIS_HEIGHT;
+const audioAnalysisContext = audioAnalysisCanvas.getContext("2d", {
+  alpha: false,
+  willReadFrequently: true,
+});
 
 const VERTEX_SHADER_SOURCE = `
   attribute vec2 a_position;
@@ -147,6 +172,175 @@ function updateCameraToggle() {
   cameraToggle.classList.toggle("is-hidden", !isVisible);
   cameraToggle.disabled = !isVisible || state.isSwitchingCamera;
   cameraToggle.textContent = state.activeFacingMode === "user" ? "FRONT" : "REAR";
+}
+
+function updateAudioToggle() {
+  audioToggle.setAttribute("aria-pressed", state.audioEnabled ? "true" : "false");
+}
+
+function createAudioVoice(audioContext) {
+  const carrier = audioContext.createOscillator();
+  const modulator = audioContext.createOscillator();
+  const modulatorGain = audioContext.createGain();
+  const voiceGain = audioContext.createGain();
+
+  carrier.type = "sine";
+  modulator.type = "sine";
+  voiceGain.gain.value = 0;
+  modulatorGain.gain.value = 0;
+
+  modulator.connect(modulatorGain);
+  modulatorGain.connect(carrier.frequency);
+  carrier.connect(voiceGain);
+  carrier.start();
+  modulator.start();
+
+  return { carrier, modulator, modulatorGain, voiceGain };
+}
+
+function ensureAudioGraph() {
+  if (state.audioContext) {
+    return;
+  }
+
+  const AudioContextConstructor = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextConstructor) {
+    throw new Error("WebAudio is not supported.");
+  }
+
+  const audioContext = new AudioContextConstructor();
+  const audioMasterGain = audioContext.createGain();
+  const audioVoices = AUDIO_PLANES.flatMap((plane) => (
+    AUDIO_NOTE_RATIOS.map((noteRatio, noteIndex) => ({
+      plane,
+      noteIndex,
+      noteRatio,
+      frequency: AUDIO_BASE_C * noteRatio * (2 ** plane.octaveOffset),
+      ...createAudioVoice(audioContext),
+    }))
+  ));
+
+  audioMasterGain.gain.value = 0;
+  audioVoices.forEach((voice) => {
+    voice.voiceGain.connect(audioMasterGain);
+  });
+  audioMasterGain.connect(audioContext.destination);
+
+  state.audioContext = audioContext;
+  state.audioMasterGain = audioMasterGain;
+  state.audioVoices = audioVoices;
+}
+
+function getAudioNoteIndex(value) {
+  return Math.min(3, Math.floor(clamp(value / 255, 0, 1) * 4));
+}
+
+function analyzeAudioFrame() {
+  if (!audioAnalysisContext || filteredPreview.width <= 0 || filteredPreview.height <= 0) {
+    return null;
+  }
+
+  audioAnalysisContext.drawImage(filteredPreview, 0, 0, AUDIO_ANALYSIS_WIDTH, AUDIO_ANALYSIS_HEIGHT);
+  const { data } = audioAnalysisContext.getImageData(0, 0, AUDIO_ANALYSIS_WIDTH, AUDIO_ANALYSIS_HEIGHT);
+  let maxBrightness = 0;
+  let saturationSum = 0;
+  let saturatedPixels = 0;
+  const noteBins = AUDIO_PLANES.flatMap((plane) => (
+    AUDIO_NOTE_RATIOS.map((noteRatio, noteIndex) => ({
+      key: `${plane.key}${noteIndex}`,
+      maxValue: 0,
+      pixels: 0,
+    }))
+  ));
+  const pixelCount = AUDIO_ANALYSIS_WIDTH * AUDIO_ANALYSIS_HEIGHT;
+
+  for (let index = 0; index < data.length; index += 4) {
+    const r = data[index];
+    const g = data[index + 1];
+    const b = data[index + 2];
+    const pixelMax = Math.max(r, g, b);
+    const pixelMin = Math.min(r, g, b);
+    const saturation = pixelMax > 0 ? (pixelMax - pixelMin) / pixelMax : 0;
+
+    maxBrightness = Math.max(maxBrightness, pixelMax);
+
+    if (pixelMax > 0) {
+      saturationSum += saturation;
+      saturatedPixels += 1;
+    }
+
+    if (saturation < AUDIO_PITCH_SATURATION_THRESHOLD) {
+      continue;
+    }
+
+    AUDIO_PLANES.forEach((plane, planeIndex) => {
+      const value = data[index + plane.channel];
+      const noteIndex = getAudioNoteIndex(value);
+      const noteBin = noteBins[(planeIndex * AUDIO_NOTE_RATIOS.length) + noteIndex];
+
+      noteBin.maxValue = Math.max(noteBin.maxValue, value);
+      noteBin.pixels += 1;
+    });
+  }
+
+  return {
+    notes: noteBins.map((noteBin) => ({
+      key: noteBin.key,
+      intensity: noteBin.maxValue / 255,
+      dominance: noteBin.pixels / pixelCount,
+      active: noteBin.pixels > 0,
+    })),
+    volume: clamp(maxBrightness / 255, 0, 1),
+    saturation: saturatedPixels > 0 ? clamp(saturationSum / saturatedPixels, 0, 1) : 0,
+  };
+}
+
+function updateAudioFromFrame() {
+  if (!state.audioEnabled || !state.audioContext || !state.audioVoices) {
+    return;
+  }
+
+  const frame = analyzeAudioFrame();
+  if (!frame) {
+    return;
+  }
+
+  const now = state.audioContext.currentTime;
+  const masterGain = (frame.volume ** 1.35) * AUDIO_MAX_GAIN;
+
+  state.audioMasterGain.gain.setTargetAtTime(masterGain, now, 0.035);
+
+  state.audioVoices.forEach((voice, index) => {
+    const note = frame.notes[index];
+    const intensity = note.active ? note.intensity : 0;
+    const dominance = note.active ? note.dominance : 0;
+    const fmDepth = frame.saturation * dominance * AUDIO_FM_INDEX;
+    const voiceGain = note.active ? ((0.12 + (intensity * 0.88)) * dominance) : 0;
+
+    voice.carrier.frequency.setTargetAtTime(voice.frequency, now, 0.045);
+    voice.modulator.frequency.setTargetAtTime(voice.frequency * 2, now, 0.045);
+    voice.modulatorGain.gain.setTargetAtTime(voice.frequency * fmDepth, now, 0.045);
+    voice.voiceGain.gain.setTargetAtTime(voiceGain, now, 0.045);
+  });
+}
+
+async function toggleAudio() {
+  try {
+    ensureAudioGraph();
+    await state.audioContext.resume();
+    state.audioEnabled = !state.audioEnabled;
+
+    if (!state.audioEnabled) {
+      state.audioMasterGain.gain.setTargetAtTime(0, state.audioContext.currentTime, 0.03);
+    }
+
+    updateAudioToggle();
+  } catch (error) {
+    console.error(error);
+    state.audioEnabled = false;
+    updateAudioToggle();
+    setStatus("音響処理を開始できませんでした。");
+  }
 }
 
 function updateFullscreenButton() {
@@ -762,6 +956,7 @@ function renderFilteredFrame(now = performance.now()) {
     glResources.trailReadIndex = writeIndex;
   }
 
+  updateAudioFromFrame();
   state.lastFrameAt = now;
   scheduleFilteredRender();
 }
@@ -989,6 +1184,7 @@ window.addEventListener("resize", refreshViewportLayout);
 window.visualViewport?.addEventListener("resize", refreshViewportLayout);
 window.visualViewport?.addEventListener("scroll", refreshViewportLayout);
 document.addEventListener("fullscreenchange", onFullscreenChange);
+audioToggle.addEventListener("click", toggleAudio);
 cameraToggle.addEventListener("click", toggleCamera);
 fullscreenToggle.addEventListener("click", toggleFullscreen);
 contrastThresholdSlider.addEventListener("input", onContrastThresholdSliderInput);
@@ -997,6 +1193,7 @@ trailAmountSlider.addEventListener("input", onTrailAmountSliderInput);
 
 updateFullscreenButton();
 updateViewportMetrics();
+updateAudioToggle();
 updateCameraToggle();
 updateFilterAvailability();
 updateTrailControls();
