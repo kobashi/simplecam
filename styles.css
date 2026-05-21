@@ -1,6 +1,7 @@
 :root {
   color-scheme: dark;
   --bg: #040404;
+  --app-height: 100dvh;
   --hud: rgba(64, 64, 64, 0.26);
   --hud-border: rgba(210, 210, 210, 0.16);
   --text: rgba(236, 236, 236, 0.72);
@@ -32,7 +33,7 @@ body {
 .preview-shell {
   width: 100vw;
   height: 100vh;
-  height: 100dvh;
+  height: var(--app-height);
 }
 
 .preview-shell {
@@ -196,6 +197,7 @@ body {
   background: rgba(210, 210, 210, 0.62);
 }
 
+.camera-toggle,
 .fullscreen-toggle {
   min-width: 2.38rem;
   padding: 0.4rem 0.5rem;
@@ -209,11 +211,21 @@ body {
   backdrop-filter: blur(5px);
 }
 
-.fullscreen-toggle {
+.top-controls {
   position: absolute;
   top: calc(env(safe-area-inset-top) + 0.5rem);
   right: 0.5rem;
+  display: flex;
+  gap: 0.35rem;
   z-index: 3;
+}
+
+.camera-toggle.is-hidden {
+  display: none;
+}
+
+.camera-toggle:disabled {
+  opacity: 0.45;
 }
 
 .status-panel {

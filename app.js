@@ -2,6 +2,7 @@ const video = document.getElementById("camera");
 const filteredPreview = document.getElementById("filteredPreview");
 const previewShell = document.querySelector(".preview-shell");
 const gestureSurface = document.getElementById("gestureSurface");
+const cameraToggle = document.getElementById("cameraToggle");
 const fullscreenToggle = document.getElementById("fullscreenToggle");
 const contrastThresholdSlider = document.getElementById("contrastThresholdSlider");
 const trailDelaySlider = document.getElementById("trailDelaySlider");
@@ -32,6 +33,10 @@ const state = {
   contrastThresholdAmount: Number(contrastThresholdSlider.value),
   trailDelayAmount: Number(trailDelaySlider.value),
   trailAmount: Number(trailAmountSlider.value),
+  preferredFacingMode: "environment",
+  activeFacingMode: "environment",
+  canSwitchCamera: false,
+  isSwitchingCamera: false,
 };
 
 const gesture = {
@@ -137,9 +142,35 @@ function setStatus(message) {
   statusPanel.classList.toggle("is-hidden", !message);
 }
 
+function updateCameraToggle() {
+  const isVisible = state.canSwitchCamera;
+  cameraToggle.classList.toggle("is-hidden", !isVisible);
+  cameraToggle.disabled = !isVisible || state.isSwitchingCamera;
+  cameraToggle.textContent = state.activeFacingMode === "user" ? "FRONT" : "REAR";
+}
+
 function updateFullscreenButton() {
   const isFullscreen = Boolean(document.fullscreenElement);
   fullscreenToggle.textContent = isFullscreen ? "EXIT" : "FULL";
+}
+
+function updateViewportMetrics() {
+  const viewportHeight = window.visualViewport?.height || window.innerHeight;
+  document.documentElement.style.setProperty("--app-height", `${viewportHeight}px`);
+}
+
+function refreshViewportLayout() {
+  updateViewportMetrics();
+  applyPreviewTransform();
+  resizeFilteredPreview();
+  syncFilterVisibility();
+}
+
+function onFullscreenChange() {
+  updateFullscreenButton();
+  refreshViewportLayout();
+  window.requestAnimationFrame(refreshViewportLayout);
+  window.setTimeout(refreshViewportLayout, 250);
 }
 
 function createShader(shaderType, source) {
@@ -386,27 +417,72 @@ async function toggleFullscreen() {
   }
 }
 
+function stopCurrentStream() {
+  state.stream?.getTracks().forEach((track) => track.stop());
+  state.stream = null;
+  state.track = null;
+}
+
+function getVideoConstraints(facingMode, exact = false) {
+  return {
+    facingMode: exact ? { exact: facingMode } : { ideal: facingMode },
+    width: { ideal: 1920 },
+    height: { ideal: 1080 },
+  };
+}
+
+async function openCameraStream(facingMode) {
+  try {
+    return await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: getVideoConstraints(facingMode, true),
+    });
+  } catch (error) {
+    return navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: getVideoConstraints(facingMode, false),
+    });
+  }
+}
+
+async function refreshAvailableCameras() {
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const videoInputs = devices.filter((device) => device.kind === "videoinput");
+    state.canSwitchCamera = videoInputs.length > 1;
+  } catch (error) {
+    state.canSwitchCamera = false;
+  }
+
+  updateCameraToggle();
+}
+
+async function startCameraStream(facingMode = state.preferredFacingMode) {
+  const previousStream = state.stream;
+  const stream = await openCameraStream(facingMode);
+  const [track] = stream.getVideoTracks();
+  const settings = track.getSettings();
+  const detectedFacingMode = settings.facingMode === "user" ? "user" : "environment";
+
+  previousStream?.getTracks().forEach((activeTrack) => activeTrack.stop());
+  state.stream = stream;
+  state.track = track;
+  state.preferredFacingMode = facingMode;
+  state.activeFacingMode = detectedFacingMode;
+  video.srcObject = stream;
+
+  await video.play();
+  configureTrackCapabilities(track);
+  resizeFilteredPreview();
+  applyPreviewTransform();
+  resetTrailTexture();
+  refreshFilterRendering();
+  await refreshAvailableCameras();
+}
+
 async function setupCamera() {
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: false,
-      video: {
-        facingMode: { ideal: "environment" },
-        width: { ideal: 1920 },
-        height: { ideal: 1080 },
-      },
-    });
-
-    const [track] = stream.getVideoTracks();
-    state.stream = stream;
-    state.track = track;
-    video.srcObject = stream;
-
-    await video.play();
-    configureTrackCapabilities(track);
-    resizeFilteredPreview();
-    applyPreviewTransform();
-    refreshFilterRendering();
+    await startCameraStream();
     setStatus("");
   } catch (error) {
     console.error(error);
@@ -423,6 +499,28 @@ function configureTrackCapabilities(track) {
 
 async function syncNativeZoom() {
   return false;
+}
+
+async function toggleCamera() {
+  if (!state.canSwitchCamera || state.isSwitchingCamera) {
+    return;
+  }
+
+  state.isSwitchingCamera = true;
+  updateCameraToggle();
+
+  const nextFacingMode = state.activeFacingMode === "user" ? "environment" : "user";
+
+  try {
+    await startCameraStream(nextFacingMode);
+    setStatus("");
+  } catch (error) {
+    console.error(error);
+    setStatus("カメラを切り替えできませんでした。");
+  } finally {
+    state.isSwitchingCamera = false;
+    updateCameraToggle();
+  }
 }
 
 function getPanBounds() {
@@ -870,15 +968,19 @@ if (prefersTouchInput) {
   window.addEventListener("pointercancel", onPointerUpOrCancel, { passive: true });
 }
 
-window.addEventListener("resize", applyPreviewTransform);
-window.addEventListener("resize", resizeFilteredPreview);
-document.addEventListener("fullscreenchange", updateFullscreenButton);
+window.addEventListener("resize", refreshViewportLayout);
+window.visualViewport?.addEventListener("resize", refreshViewportLayout);
+window.visualViewport?.addEventListener("scroll", refreshViewportLayout);
+document.addEventListener("fullscreenchange", onFullscreenChange);
+cameraToggle.addEventListener("click", toggleCamera);
 fullscreenToggle.addEventListener("click", toggleFullscreen);
 contrastThresholdSlider.addEventListener("input", onContrastThresholdSliderInput);
 trailDelaySlider.addEventListener("input", onTrailDelaySliderInput);
 trailAmountSlider.addEventListener("input", onTrailAmountSliderInput);
 
 updateFullscreenButton();
+updateViewportMetrics();
+updateCameraToggle();
 updateFilterAvailability();
 updateTrailControls();
 syncFilterVisibility();

@@ -70,18 +70,28 @@
             <span id="trailAmountValue" class="trail-slider-value">0</span>
           </label>
         </div>
-        <button
-          id="fullscreenToggle"
-          class="fullscreen-toggle"
-          type="button"
-          aria-label="Toggle fullscreen"
-        >
-          FULL
-        </button>
+        <div class="top-controls">
+          <button
+            id="cameraToggle"
+            class="camera-toggle is-hidden"
+            type="button"
+            aria-label="Toggle camera"
+          >
+            REAR
+          </button>
+          <button
+            id="fullscreenToggle"
+            class="fullscreen-toggle"
+            type="button"
+            aria-label="Toggle fullscreen"
+          >
+            FULL
+          </button>
+        </div>
         <div class="status-panel is-hidden" id="statusPanel" aria-live="polite"></div>
       </section>
     </main>
 
-    <script type="module" src="./app.js?v=unified-pipeline-2"></script>
+    <script type="module" src="./app.js?v=camera-toggle-fullscreen-1"></script>
   </body>
 </html>
