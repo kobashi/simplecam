@@ -49,6 +49,7 @@ const state = {
   audioReleaseAmount: Number(audioReleaseSlider.value),
   audioContext: null,
   audioMasterGain: null,
+  audioLimiter: null,
   audioVoices: null,
   lastAudioAnalysis: null,
 };
@@ -75,9 +76,10 @@ const TRAIL_DELAY_BUFFER_SIZE = 30;
 const TRAIL_DELAY_BASE_INTERVAL_MS = 1000 / TRAIL_DELAY_BUFFER_SIZE;
 const AUDIO_ANALYSIS_WIDTH = 64;
 const AUDIO_ANALYSIS_HEIGHT = 36;
-const AUDIO_MAX_GAIN = 0.18;
+const AUDIO_MAX_GAIN = 0.12;
 const AUDIO_FM_INDEX = 2.7;
 const AUDIO_ATTACK_TIME = 0.018;
+const AUDIO_VOICE_MIX_GAIN = 1 / 3;
 const AUDIO_PITCH_SATURATION_THRESHOLD = 0.12;
 const AUDIO_NOTE_RATIOS = [1, 5 / 4, 3 / 2, 15 / 8];
 const AUDIO_BASE_C = 261.63;
@@ -226,6 +228,7 @@ function ensureAudioGraph() {
 
   const audioContext = new AudioContextConstructor();
   const audioMasterGain = audioContext.createGain();
+  const audioLimiter = audioContext.createDynamicsCompressor();
   const audioVoices = AUDIO_PLANES.flatMap((plane) => (
     AUDIO_NOTE_RATIOS.map((noteRatio, noteIndex) => ({
       plane,
@@ -237,13 +240,21 @@ function ensureAudioGraph() {
   ));
 
   audioMasterGain.gain.value = 0;
+  audioLimiter.threshold.value = -8;
+  audioLimiter.knee.value = 6;
+  audioLimiter.ratio.value = 16;
+  audioLimiter.attack.value = 0.003;
+  audioLimiter.release.value = 0.08;
+
   audioVoices.forEach((voice) => {
     voice.voiceGain.connect(audioMasterGain);
   });
-  audioMasterGain.connect(audioContext.destination);
+  audioMasterGain.connect(audioLimiter);
+  audioLimiter.connect(audioContext.destination);
 
   state.audioContext = audioContext;
   state.audioMasterGain = audioMasterGain;
+  state.audioLimiter = audioLimiter;
   state.audioVoices = audioVoices;
 }
 
@@ -328,6 +339,17 @@ function getAudioAnalysisDelta(currentFrame, previousFrame) {
   return Math.max(volumeDelta, saturationDelta, noteDelta);
 }
 
+function holdAudioParamAtTime(audioParam, time) {
+  if (typeof audioParam.cancelAndHoldAtTime === "function") {
+    audioParam.cancelAndHoldAtTime(time);
+    return;
+  }
+
+  const currentValue = audioParam.value;
+  audioParam.cancelScheduledValues(time);
+  audioParam.setValueAtTime(currentValue, time);
+}
+
 function applyContinuousAudio(frame, now, masterGain) {
   state.audioMasterGain.gain.setTargetAtTime(masterGain, now, 0.035);
 
@@ -336,10 +358,10 @@ function applyContinuousAudio(frame, now, masterGain) {
     const intensity = note.active ? note.intensity : 0;
     const dominance = note.active ? note.dominance : 0;
     const fmDepth = frame.saturation * dominance * AUDIO_FM_INDEX;
-    const voiceGain = note.active ? ((0.12 + (intensity * 0.88)) * dominance) : 0;
+    const voiceGain = note.active ? ((0.12 + (intensity * 0.88)) * dominance * AUDIO_VOICE_MIX_GAIN) : 0;
 
-    voice.modulatorGain.gain.cancelScheduledValues(now);
-    voice.voiceGain.gain.cancelScheduledValues(now);
+    holdAudioParamAtTime(voice.modulatorGain.gain, now);
+    holdAudioParamAtTime(voice.voiceGain.gain, now);
     voice.carrier.frequency.setTargetAtTime(voice.frequency, now, 0.045);
     voice.modulator.frequency.setTargetAtTime(voice.frequency * 2, now, 0.045);
     voice.modulatorGain.gain.setTargetAtTime(voice.frequency * fmDepth, now, 0.045);
@@ -357,16 +379,16 @@ function triggerEnvelopeAudio(frame, now, masterGain) {
     const intensity = note.active ? note.intensity : 0;
     const dominance = note.active ? note.dominance : 0;
     const fmDepth = frame.saturation * dominance * AUDIO_FM_INDEX;
-    const peakGain = note.active ? ((0.12 + (intensity * 0.88)) * dominance) : 0;
+    const peakGain = note.active ? ((0.12 + (intensity * 0.88)) * dominance * AUDIO_VOICE_MIX_GAIN) : 0;
     const attackEnd = now + AUDIO_ATTACK_TIME;
     const releaseEnd = attackEnd + releaseTime;
 
     voice.carrier.frequency.setValueAtTime(voice.frequency, now);
     voice.modulator.frequency.setValueAtTime(voice.frequency * 2, now);
-    voice.modulatorGain.gain.cancelScheduledValues(now);
+    holdAudioParamAtTime(voice.modulatorGain.gain, now);
     voice.modulatorGain.gain.setTargetAtTime(voice.frequency * fmDepth, now, 0.01);
-    voice.voiceGain.gain.cancelScheduledValues(now);
-    voice.voiceGain.gain.setValueAtTime(0, now);
+
+    holdAudioParamAtTime(voice.voiceGain.gain, now);
     voice.voiceGain.gain.linearRampToValueAtTime(peakGain, attackEnd);
     voice.voiceGain.gain.linearRampToValueAtTime(0, releaseEnd);
   });
