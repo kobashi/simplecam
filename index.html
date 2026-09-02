@@ -69,6 +69,32 @@
             />
             <span id="trailAmountValue" class="trail-slider-value">0</span>
           </label>
+          <label class="trail-slider">
+            <span class="trail-slider-label">THRESH</span>
+            <input
+              id="audioThresholdSlider"
+              class="trail-slider-input"
+              type="range"
+              min="0"
+              max="100"
+              step="1"
+              value="12"
+            />
+            <span id="audioThresholdValue" class="trail-slider-value">12</span>
+          </label>
+          <label class="trail-slider">
+            <span class="trail-slider-label">REL</span>
+            <input
+              id="audioReleaseSlider"
+              class="trail-slider-input"
+              type="range"
+              min="20"
+              max="2000"
+              step="10"
+              value="350"
+            />
+            <span id="audioReleaseValue" class="trail-slider-value">350</span>
+          </label>
         </div>
         <div class="top-controls">
           <button
@@ -78,7 +104,16 @@
             aria-label="Toggle synthesized audio"
             aria-pressed="false"
           >
-            SND
+            SND OFF
+          </button>
+          <button
+            id="audioEnvelopeToggle"
+            class="audio-envelope-toggle"
+            type="button"
+            aria-label="Toggle audio envelope"
+            aria-pressed="false"
+          >
+            ENV OFF
           </button>
           <button
             id="cameraToggle"
@@ -101,6 +136,6 @@
       </section>
     </main>
 
-    <script type="module" src="./app.js?v=audio-synth-12voices-1"></script>
+    <script type="module" src="./app.js?v=audio-envelope-1"></script>
   </body>
 </html>

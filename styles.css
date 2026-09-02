@@ -103,9 +103,9 @@ body {
   left: 50%;
   bottom: calc(env(safe-area-inset-bottom) + 0.5rem);
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.58rem;
-  width: min(92vw, 34rem);
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.5rem;
+  width: min(94vw, 44rem);
   padding: 0.46rem 0.58rem;
   border: 1px solid var(--hud-border);
   border-radius: 0.5rem;
@@ -150,9 +150,9 @@ body {
 
 .trail-slider-input {
   width: 100%;
-  height: 0.64rem;
-  margin: -0.18rem 0;
-  padding: 0.18rem 0;
+  height: 1rem;
+  margin: -0.36rem 0;
+  padding: 0.36rem 0;
   accent-color: rgba(180, 180, 180, 0.55);
   appearance: none;
   -webkit-appearance: none;
@@ -167,9 +167,9 @@ body {
 }
 
 .trail-slider-input::-webkit-slider-thumb {
-  width: 0.66rem;
-  height: 0.66rem;
-  margin-top: -0.27rem;
+  width: 1.32rem;
+  height: 1.32rem;
+  margin-top: -0.6rem;
   border: 0;
   border-radius: 50%;
   background: rgba(210, 210, 210, 0.62);
@@ -190,31 +190,40 @@ body {
 }
 
 .trail-slider-input::-moz-range-thumb {
-  width: 0.66rem;
-  height: 0.66rem;
+  width: 1.32rem;
+  height: 1.32rem;
   border: 0;
   border-radius: 50%;
   background: rgba(210, 210, 210, 0.62);
 }
 
 .audio-toggle,
+.audio-envelope-toggle,
 .camera-toggle,
 .fullscreen-toggle {
-  min-width: 2.38rem;
-  padding: 0.4rem 0.5rem;
+  min-width: 4.76rem;
+  padding: 0.7rem 0.72rem;
   border: 1px solid var(--hud-border);
   border-radius: 999px;
   background: var(--hud);
   color: var(--text);
   font: inherit;
-  font-size: 0.39rem;
+  font-size: 0.56rem;
   letter-spacing: 0.14em;
   backdrop-filter: blur(5px);
 }
 
-.audio-toggle[aria-pressed="true"] {
-  background: rgba(142, 142, 142, 0.36);
-  color: rgba(255, 255, 255, 0.84);
+.audio-toggle[aria-pressed="true"],
+.audio-envelope-toggle[aria-pressed="true"] {
+  background: rgba(232, 232, 232, 0.74);
+  border-color: rgba(255, 255, 255, 0.78);
+  color: rgba(24, 24, 24, 0.92);
+}
+
+.audio-toggle[aria-pressed="false"],
+.audio-envelope-toggle[aria-pressed="false"] {
+  background: rgba(28, 28, 28, 0.42);
+  color: rgba(210, 210, 210, 0.64);
 }
 
 .top-controls {
@@ -222,7 +231,7 @@ body {
   top: calc(env(safe-area-inset-top) + 0.5rem);
   right: 0.5rem;
   display: flex;
-  gap: 0.35rem;
+  gap: 0.5rem;
   z-index: 3;
 }
 

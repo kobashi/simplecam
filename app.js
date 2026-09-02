@@ -3,14 +3,19 @@ const filteredPreview = document.getElementById("filteredPreview");
 const previewShell = document.querySelector(".preview-shell");
 const gestureSurface = document.getElementById("gestureSurface");
 const audioToggle = document.getElementById("audioToggle");
+const audioEnvelopeToggle = document.getElementById("audioEnvelopeToggle");
 const cameraToggle = document.getElementById("cameraToggle");
 const fullscreenToggle = document.getElementById("fullscreenToggle");
 const contrastThresholdSlider = document.getElementById("contrastThresholdSlider");
 const trailDelaySlider = document.getElementById("trailDelaySlider");
 const trailAmountSlider = document.getElementById("trailAmountSlider");
+const audioThresholdSlider = document.getElementById("audioThresholdSlider");
+const audioReleaseSlider = document.getElementById("audioReleaseSlider");
 const contrastThresholdValue = document.getElementById("contrastThresholdValue");
 const trailDelayValue = document.getElementById("trailDelayValue");
 const trailAmountValue = document.getElementById("trailAmountValue");
+const audioThresholdValue = document.getElementById("audioThresholdValue");
+const audioReleaseValue = document.getElementById("audioReleaseValue");
 const statusPanel = document.getElementById("statusPanel");
 
 const gl = filteredPreview.getContext("webgl", {
@@ -39,9 +44,13 @@ const state = {
   canSwitchCamera: true,
   isSwitchingCamera: false,
   audioEnabled: false,
+  audioEnvelopeEnabled: false,
+  audioThresholdAmount: Number(audioThresholdSlider.value),
+  audioReleaseAmount: Number(audioReleaseSlider.value),
   audioContext: null,
   audioMasterGain: null,
   audioVoices: null,
+  lastAudioAnalysis: null,
 };
 
 const gesture = {
@@ -68,6 +77,7 @@ const AUDIO_ANALYSIS_WIDTH = 64;
 const AUDIO_ANALYSIS_HEIGHT = 36;
 const AUDIO_MAX_GAIN = 0.18;
 const AUDIO_FM_INDEX = 2.7;
+const AUDIO_ATTACK_TIME = 0.018;
 const AUDIO_PITCH_SATURATION_THRESHOLD = 0.12;
 const AUDIO_NOTE_RATIOS = [1, 5 / 4, 3 / 2, 15 / 8];
 const AUDIO_BASE_C = 261.63;
@@ -176,6 +186,12 @@ function updateCameraToggle() {
 
 function updateAudioToggle() {
   audioToggle.setAttribute("aria-pressed", state.audioEnabled ? "true" : "false");
+  audioToggle.textContent = state.audioEnabled ? "SND ON" : "SND OFF";
+}
+
+function updateAudioEnvelopeToggle() {
+  audioEnvelopeToggle.setAttribute("aria-pressed", state.audioEnvelopeEnabled ? "true" : "false");
+  audioEnvelopeToggle.textContent = state.audioEnvelopeEnabled ? "ENV ON" : "ENV OFF";
 }
 
 function createAudioVoice(audioContext) {
@@ -295,6 +311,67 @@ function analyzeAudioFrame() {
   };
 }
 
+function getAudioAnalysisDelta(currentFrame, previousFrame) {
+  if (!previousFrame) {
+    return 1;
+  }
+
+  const volumeDelta = Math.abs(currentFrame.volume - previousFrame.volume);
+  const saturationDelta = Math.abs(currentFrame.saturation - previousFrame.saturation);
+  const noteDelta = currentFrame.notes.reduce((largestDelta, note, index) => {
+    const previousNote = previousFrame.notes[index];
+    const intensityDelta = Math.abs(note.intensity - previousNote.intensity);
+    const dominanceDelta = Math.abs(note.dominance - previousNote.dominance);
+    return Math.max(largestDelta, intensityDelta, dominanceDelta);
+  }, 0);
+
+  return Math.max(volumeDelta, saturationDelta, noteDelta);
+}
+
+function applyContinuousAudio(frame, now, masterGain) {
+  state.audioMasterGain.gain.setTargetAtTime(masterGain, now, 0.035);
+
+  state.audioVoices.forEach((voice, index) => {
+    const note = frame.notes[index];
+    const intensity = note.active ? note.intensity : 0;
+    const dominance = note.active ? note.dominance : 0;
+    const fmDepth = frame.saturation * dominance * AUDIO_FM_INDEX;
+    const voiceGain = note.active ? ((0.12 + (intensity * 0.88)) * dominance) : 0;
+
+    voice.modulatorGain.gain.cancelScheduledValues(now);
+    voice.voiceGain.gain.cancelScheduledValues(now);
+    voice.carrier.frequency.setTargetAtTime(voice.frequency, now, 0.045);
+    voice.modulator.frequency.setTargetAtTime(voice.frequency * 2, now, 0.045);
+    voice.modulatorGain.gain.setTargetAtTime(voice.frequency * fmDepth, now, 0.045);
+    voice.voiceGain.gain.setTargetAtTime(voiceGain, now, 0.045);
+  });
+}
+
+function triggerEnvelopeAudio(frame, now, masterGain) {
+  const releaseTime = clamp(state.audioReleaseAmount / 1000, 0.02, 2);
+
+  state.audioMasterGain.gain.setTargetAtTime(masterGain, now, 0.012);
+
+  state.audioVoices.forEach((voice, index) => {
+    const note = frame.notes[index];
+    const intensity = note.active ? note.intensity : 0;
+    const dominance = note.active ? note.dominance : 0;
+    const fmDepth = frame.saturation * dominance * AUDIO_FM_INDEX;
+    const peakGain = note.active ? ((0.12 + (intensity * 0.88)) * dominance) : 0;
+    const attackEnd = now + AUDIO_ATTACK_TIME;
+    const releaseEnd = attackEnd + releaseTime;
+
+    voice.carrier.frequency.setValueAtTime(voice.frequency, now);
+    voice.modulator.frequency.setValueAtTime(voice.frequency * 2, now);
+    voice.modulatorGain.gain.cancelScheduledValues(now);
+    voice.modulatorGain.gain.setTargetAtTime(voice.frequency * fmDepth, now, 0.01);
+    voice.voiceGain.gain.cancelScheduledValues(now);
+    voice.voiceGain.gain.setValueAtTime(0, now);
+    voice.voiceGain.gain.linearRampToValueAtTime(peakGain, attackEnd);
+    voice.voiceGain.gain.linearRampToValueAtTime(0, releaseEnd);
+  });
+}
+
 function updateAudioFromFrame() {
   if (!state.audioEnabled || !state.audioContext || !state.audioVoices) {
     return;
@@ -307,21 +384,20 @@ function updateAudioFromFrame() {
 
   const now = state.audioContext.currentTime;
   const masterGain = (frame.volume ** 1.35) * AUDIO_MAX_GAIN;
+  const analysisDelta = getAudioAnalysisDelta(frame, state.lastAudioAnalysis);
+  const triggerThreshold = clamp(state.audioThresholdAmount / 100, 0, 1);
+  const shouldTriggerEnvelope = state.audioEnvelopeEnabled && analysisDelta >= triggerThreshold;
 
-  state.audioMasterGain.gain.setTargetAtTime(masterGain, now, 0.035);
+  if (state.audioEnvelopeEnabled) {
+    state.audioMasterGain.gain.setTargetAtTime(masterGain, now, 0.035);
+    if (shouldTriggerEnvelope) {
+      triggerEnvelopeAudio(frame, now, masterGain);
+    }
+  } else {
+    applyContinuousAudio(frame, now, masterGain);
+  }
 
-  state.audioVoices.forEach((voice, index) => {
-    const note = frame.notes[index];
-    const intensity = note.active ? note.intensity : 0;
-    const dominance = note.active ? note.dominance : 0;
-    const fmDepth = frame.saturation * dominance * AUDIO_FM_INDEX;
-    const voiceGain = note.active ? ((0.12 + (intensity * 0.88)) * dominance) : 0;
-
-    voice.carrier.frequency.setTargetAtTime(voice.frequency, now, 0.045);
-    voice.modulator.frequency.setTargetAtTime(voice.frequency * 2, now, 0.045);
-    voice.modulatorGain.gain.setTargetAtTime(voice.frequency * fmDepth, now, 0.045);
-    voice.voiceGain.gain.setTargetAtTime(voiceGain, now, 0.045);
-  });
+  state.lastAudioAnalysis = frame;
 }
 
 async function toggleAudio() {
@@ -329,6 +405,7 @@ async function toggleAudio() {
     ensureAudioGraph();
     await state.audioContext.resume();
     state.audioEnabled = !state.audioEnabled;
+    state.lastAudioAnalysis = null;
 
     if (!state.audioEnabled) {
       state.audioMasterGain.gain.setTargetAtTime(0, state.audioContext.currentTime, 0.03);
@@ -341,6 +418,12 @@ async function toggleAudio() {
     updateAudioToggle();
     setStatus("音響処理を開始できませんでした。");
   }
+}
+
+function toggleAudioEnvelope() {
+  state.audioEnvelopeEnabled = !state.audioEnvelopeEnabled;
+  state.lastAudioAnalysis = null;
+  updateAudioEnvelopeToggle();
 }
 
 function updateFullscreenButton() {
@@ -547,6 +630,8 @@ function updateFilterAvailability() {
   contrastThresholdSlider.disabled = !filtersAvailable;
   trailDelaySlider.disabled = !filtersAvailable;
   trailAmountSlider.disabled = !filtersAvailable;
+  audioThresholdSlider.disabled = !filtersAvailable;
+  audioReleaseSlider.disabled = !filtersAvailable;
 }
 
 function formatStrength(value) {
@@ -557,9 +642,13 @@ function updateTrailControls() {
   contrastThresholdSlider.value = String(state.contrastThresholdAmount);
   trailDelaySlider.value = String(state.trailDelayAmount);
   trailAmountSlider.value = String(state.trailAmount);
+  audioThresholdSlider.value = String(state.audioThresholdAmount);
+  audioReleaseSlider.value = String(state.audioReleaseAmount);
   contrastThresholdValue.textContent = formatStrength(state.contrastThresholdAmount);
   trailDelayValue.textContent = formatStrength(state.trailDelayAmount);
   trailAmountValue.textContent = formatStrength(state.trailAmount);
+  audioThresholdValue.textContent = formatStrength(state.audioThresholdAmount);
+  audioReleaseValue.textContent = formatStrength(state.audioReleaseAmount);
 }
 
 function shouldRenderFilteredPreview() {
@@ -998,6 +1087,16 @@ function onTrailAmountSliderInput(event) {
   refreshFilterRendering();
 }
 
+function onAudioThresholdSliderInput(event) {
+  state.audioThresholdAmount = Number(event.currentTarget.value);
+  updateTrailControls();
+}
+
+function onAudioReleaseSliderInput(event) {
+  state.audioReleaseAmount = Number(event.currentTarget.value);
+  updateTrailControls();
+}
+
 function getPointDistance(points) {
   const [a, b] = points;
   return Math.hypot(b.clientX - a.clientX, b.clientY - a.clientY);
@@ -1185,15 +1284,19 @@ window.visualViewport?.addEventListener("resize", refreshViewportLayout);
 window.visualViewport?.addEventListener("scroll", refreshViewportLayout);
 document.addEventListener("fullscreenchange", onFullscreenChange);
 audioToggle.addEventListener("click", toggleAudio);
+audioEnvelopeToggle.addEventListener("click", toggleAudioEnvelope);
 cameraToggle.addEventListener("click", toggleCamera);
 fullscreenToggle.addEventListener("click", toggleFullscreen);
 contrastThresholdSlider.addEventListener("input", onContrastThresholdSliderInput);
 trailDelaySlider.addEventListener("input", onTrailDelaySliderInput);
 trailAmountSlider.addEventListener("input", onTrailAmountSliderInput);
+audioThresholdSlider.addEventListener("input", onAudioThresholdSliderInput);
+audioReleaseSlider.addEventListener("input", onAudioReleaseSliderInput);
 
 updateFullscreenButton();
 updateViewportMetrics();
 updateAudioToggle();
+updateAudioEnvelopeToggle();
 updateCameraToggle();
 updateFilterAvailability();
 updateTrailControls();
