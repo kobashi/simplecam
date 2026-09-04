@@ -202,6 +202,7 @@ body {
 
 .audio-toggle,
 .audio-envelope-toggle,
+.economy-toggle,
 .camera-toggle,
 .fullscreen-toggle {
   min-width: clamp(4.2rem, 21vw, 5.1rem);
@@ -217,14 +218,16 @@ body {
 }
 
 .audio-toggle[aria-pressed="true"],
-.audio-envelope-toggle[aria-pressed="true"] {
+.audio-envelope-toggle[aria-pressed="true"],
+.economy-toggle[aria-pressed="true"] {
   background: rgba(232, 232, 232, 0.74);
   border-color: rgba(255, 255, 255, 0.78);
   color: rgba(24, 24, 24, 0.92);
 }
 
 .audio-toggle[aria-pressed="false"],
-.audio-envelope-toggle[aria-pressed="false"] {
+.audio-envelope-toggle[aria-pressed="false"],
+.economy-toggle[aria-pressed="false"] {
   background: rgba(28, 28, 28, 0.42);
   color: rgba(210, 210, 210, 0.64);
 }

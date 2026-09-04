@@ -7,7 +7,7 @@
       content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no"
     />
     <title>Camera Frame Preview</title>
-    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./styles.css?v=economy-mode-1" />
   </head>
   <body>
     <main class="app">
@@ -138,6 +138,15 @@
             ENV OFF
           </button>
           <button
+            id="economyToggle"
+            class="economy-toggle"
+            type="button"
+            aria-label="Toggle economy mode"
+            aria-pressed="false"
+          >
+            ECO OFF
+          </button>
+          <button
             id="cameraToggle"
             class="camera-toggle is-hidden"
             type="button"
@@ -158,6 +167,6 @@
       </section>
     </main>
 
-    <script type="module" src="./app.js?v=ui-audio-octave-1"></script>
+    <script type="module" src="./app.js?v=economy-mode-1"></script>
   </body>
 </html>

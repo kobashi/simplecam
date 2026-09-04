@@ -4,6 +4,7 @@ const previewShell = document.querySelector(".preview-shell");
 const gestureSurface = document.getElementById("gestureSurface");
 const audioToggle = document.getElementById("audioToggle");
 const audioEnvelopeToggle = document.getElementById("audioEnvelopeToggle");
+const economyToggle = document.getElementById("economyToggle");
 const controlsToggle = document.getElementById("controlsToggle");
 const cameraToggle = document.getElementById("cameraToggle");
 const fullscreenToggle = document.getElementById("fullscreenToggle");
@@ -48,6 +49,7 @@ const state = {
   isSwitchingCamera: false,
   audioEnabled: false,
   audioEnvelopeEnabled: false,
+  economyEnabled: false,
   controlsVisible: true,
   audioThresholdAmount: Number(audioThresholdSlider.value),
   audioReleaseAmount: Number(audioReleaseSlider.value),
@@ -57,6 +59,7 @@ const state = {
   audioLimiter: null,
   audioVoices: null,
   lastAudioAnalysis: null,
+  lastAudioAnalysisAt: 0,
 };
 
 const gesture = {
@@ -79,6 +82,11 @@ const CONTRAST_THRESHOLD_MAX = 0.58;
 const TRAIL_MAX_BLEND = 0.9925;
 const TRAIL_DELAY_BUFFER_SIZE = 30;
 const TRAIL_DELAY_BASE_INTERVAL_MS = 1000 / TRAIL_DELAY_BUFFER_SIZE;
+const ECONOMY_CANVAS_SCALE = 0.6;
+const ECONOMY_RENDER_FPS = 24;
+const ECONOMY_AUDIO_ANALYSIS_INTERVAL_MS = 100;
+const CAMERA_NORMAL_CONSTRAINTS = { width: 1920, height: 1080, frameRate: 60 };
+const CAMERA_ECONOMY_CONSTRAINTS = { width: 1280, height: 720, frameRate: 24 };
 const AUDIO_ANALYSIS_WIDTH = 64;
 const AUDIO_ANALYSIS_HEIGHT = 36;
 const AUDIO_MAX_GAIN = 0.12;
@@ -199,6 +207,11 @@ function updateAudioToggle() {
 function updateAudioEnvelopeToggle() {
   audioEnvelopeToggle.setAttribute("aria-pressed", state.audioEnvelopeEnabled ? "true" : "false");
   audioEnvelopeToggle.textContent = state.audioEnvelopeEnabled ? "ENV ON" : "ENV OFF";
+}
+
+function updateEconomyToggle() {
+  economyToggle.setAttribute("aria-pressed", state.economyEnabled ? "true" : "false");
+  economyToggle.textContent = state.economyEnabled ? "ECO ON" : "ECO OFF";
 }
 
 function updateControlsToggle() {
@@ -411,8 +424,15 @@ function triggerEnvelopeAudio(frame, now, masterGain) {
   });
 }
 
-function updateAudioFromFrame() {
+function updateAudioFromFrame(renderedAt = performance.now()) {
   if (!state.audioEnabled || !state.audioContext || !state.audioVoices) {
+    return;
+  }
+
+  if (
+    state.economyEnabled &&
+    renderedAt - state.lastAudioAnalysisAt < ECONOMY_AUDIO_ANALYSIS_INTERVAL_MS
+  ) {
     return;
   }
 
@@ -437,6 +457,7 @@ function updateAudioFromFrame() {
   }
 
   state.lastAudioAnalysis = frame;
+  state.lastAudioAnalysisAt = renderedAt;
 }
 
 async function toggleAudio() {
@@ -445,6 +466,7 @@ async function toggleAudio() {
     await state.audioContext.resume();
     state.audioEnabled = !state.audioEnabled;
     state.lastAudioAnalysis = null;
+    state.lastAudioAnalysisAt = 0;
 
     if (!state.audioEnabled) {
       state.audioMasterGain.gain.setTargetAtTime(0, state.audioContext.currentTime, 0.03);
@@ -463,6 +485,36 @@ function toggleAudioEnvelope() {
   state.audioEnvelopeEnabled = !state.audioEnvelopeEnabled;
   state.lastAudioAnalysis = null;
   updateAudioEnvelopeToggle();
+}
+
+async function applyCameraPerformanceConstraints() {
+  if (!state.track?.applyConstraints) {
+    return;
+  }
+
+  const { width, height, frameRate } = state.economyEnabled
+    ? CAMERA_ECONOMY_CONSTRAINTS
+    : CAMERA_NORMAL_CONSTRAINTS;
+
+  try {
+    await state.track.applyConstraints({
+      width: { ideal: width },
+      height: { ideal: height },
+      frameRate: { ideal: frameRate },
+    });
+  } catch (error) {
+    console.warn("Camera performance constraints were not applied.", error);
+  }
+}
+
+async function toggleEconomy() {
+  state.economyEnabled = !state.economyEnabled;
+  state.lastFrameAt = 0;
+  state.lastAudioAnalysisAt = 0;
+  updateEconomyToggle();
+  resizeFilteredPreview(true);
+  refreshFilterRendering();
+  await applyCameraPerformanceConstraints();
 }
 
 function toggleControlsVisibility() {
@@ -756,10 +808,15 @@ function stopCurrentStream() {
 }
 
 function getVideoConstraints(facingMode, exact = false) {
+  const { width, height, frameRate } = state.economyEnabled
+    ? CAMERA_ECONOMY_CONSTRAINTS
+    : CAMERA_NORMAL_CONSTRAINTS;
+
   return {
     facingMode: exact ? { exact: facingMode } : { ideal: facingMode },
-    width: { ideal: 1920 },
-    height: { ideal: 1080 },
+    width: { ideal: width },
+    height: { ideal: height },
+    frameRate: { ideal: frameRate },
   };
 }
 
@@ -892,11 +949,12 @@ function applyPreviewTransform() {
   filteredPreview.style.transform = transform;
 }
 
-function resizeFilteredPreview() {
-  const width = Math.max(1, Math.round(previewShell.clientWidth || window.innerWidth));
-  const height = Math.max(1, Math.round(previewShell.clientHeight || window.innerHeight));
+function resizeFilteredPreview(force = false) {
+  const scale = state.economyEnabled ? ECONOMY_CANVAS_SCALE : 1;
+  const width = Math.max(1, Math.round((previewShell.clientWidth || window.innerWidth) * scale));
+  const height = Math.max(1, Math.round((previewShell.clientHeight || window.innerHeight) * scale));
 
-  if (filteredPreview.width === width && filteredPreview.height === height) {
+  if (!force && filteredPreview.width === width && filteredPreview.height === height) {
     return;
   }
 
@@ -995,6 +1053,14 @@ function getDelayedVideoTexture() {
   return glResources.delayTextures[getWrappedDelayIndex(latestIndex - availableDelay)];
 }
 
+function shouldSkipRenderFrame(now) {
+  if (!state.economyEnabled || state.lastFrameAt <= 0) {
+    return false;
+  }
+
+  return now - state.lastFrameAt < 1000 / ECONOMY_RENDER_FPS;
+}
+
 function scheduleFilteredRender() {
   if (state.renderFrameId !== null || !shouldRenderFilteredPreview()) {
     return;
@@ -1016,6 +1082,11 @@ function renderFilteredFrame(now = performance.now()) {
   state.renderFrameId = null;
 
   if (!shouldRenderFilteredPreview()) {
+    return;
+  }
+
+  if (shouldSkipRenderFrame(now)) {
+    scheduleFilteredRender();
     return;
   }
 
@@ -1094,7 +1165,7 @@ function renderFilteredFrame(now = performance.now()) {
     glResources.trailReadIndex = writeIndex;
   }
 
-  updateAudioFromFrame();
+  updateAudioFromFrame(now);
   state.lastFrameAt = now;
   scheduleFilteredRender();
 }
@@ -1339,6 +1410,7 @@ window.visualViewport?.addEventListener("scroll", refreshViewportLayout);
 document.addEventListener("fullscreenchange", onFullscreenChange);
 audioToggle.addEventListener("click", toggleAudio);
 audioEnvelopeToggle.addEventListener("click", toggleAudioEnvelope);
+economyToggle.addEventListener("click", toggleEconomy);
 controlsToggle.addEventListener("click", toggleControlsVisibility);
 cameraToggle.addEventListener("click", toggleCamera);
 fullscreenToggle.addEventListener("click", toggleFullscreen);
@@ -1353,6 +1425,7 @@ updateFullscreenButton();
 updateViewportMetrics();
 updateAudioToggle();
 updateAudioEnvelopeToggle();
+updateEconomyToggle();
 updateControlsToggle();
 updateCameraToggle();
 updateFilterAvailability();
