@@ -232,8 +232,8 @@ body {
 .top-controls {
   position: absolute;
   top: calc(env(safe-area-inset-top) + 0.5rem);
-  left: 4.8rem;
-  right: 0.5rem;
+  left: 0.5rem;
+  right: 4.8rem;
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
@@ -247,7 +247,7 @@ body {
 .controls-toggle {
   position: absolute;
   top: calc(env(safe-area-inset-top) + 0.5rem);
-  left: 0.5rem;
+  right: 0.5rem;
   min-width: 3.7rem;
   padding: 0.56rem 0.6rem;
   border: 1px solid rgba(210, 210, 210, 0.12);
