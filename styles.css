@@ -225,6 +225,12 @@ body {
   color: rgba(24, 24, 24, 0.92);
 }
 
+.economy-toggle[data-mode="super"] {
+  background: rgba(198, 198, 198, 0.82);
+  border-color: rgba(255, 255, 255, 0.86);
+  color: rgba(12, 12, 12, 0.96);
+}
+
 .audio-toggle[aria-pressed="false"],
 .audio-envelope-toggle[aria-pressed="false"],
 .economy-toggle[aria-pressed="false"] {

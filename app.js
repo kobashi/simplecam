@@ -26,6 +26,7 @@ const gl = filteredPreview.getContext("webgl", {
   alpha: false,
   antialias: false,
   depth: false,
+  powerPreference: "low-power",
   premultipliedAlpha: false,
   preserveDrawingBuffer: false,
 });
@@ -39,7 +40,9 @@ const state = {
   panX: 0,
   panY: 0,
   renderFrameId: null,
+  renderScheduler: null,
   lastFrameAt: 0,
+  nextFrameAt: 0,
   contrastThresholdAmount: Number(contrastThresholdSlider.value),
   trailDelayAmount: Number(trailDelaySlider.value),
   trailAmount: Number(trailAmountSlider.value),
@@ -49,7 +52,10 @@ const state = {
   isSwitchingCamera: false,
   audioEnabled: false,
   audioEnvelopeEnabled: false,
-  economyEnabled: false,
+  economyMode: "normal",
+  performanceChangeToken: 0,
+  pageVisible: !document.hidden,
+  visibilityChangeToken: 0,
   controlsVisible: true,
   audioThresholdAmount: Number(audioThresholdSlider.value),
   audioReleaseAmount: Number(audioReleaseSlider.value),
@@ -82,11 +88,34 @@ const CONTRAST_THRESHOLD_MAX = 0.58;
 const TRAIL_MAX_BLEND = 0.9925;
 const TRAIL_DELAY_BUFFER_SIZE = 30;
 const TRAIL_DELAY_BASE_INTERVAL_MS = 1000 / TRAIL_DELAY_BUFFER_SIZE;
-const ECONOMY_CANVAS_SCALE = 0.6;
-const ECONOMY_RENDER_FPS = 24;
-const ECONOMY_AUDIO_ANALYSIS_INTERVAL_MS = 100;
-const CAMERA_NORMAL_CONSTRAINTS = { width: 1920, height: 1080, frameRate: 60 };
-const CAMERA_ECONOMY_CONSTRAINTS = { width: 1280, height: 720, frameRate: 24 };
+const TRAIL_REFERENCE_FRAME_MS = 1000 / 60;
+const PERFORMANCE_MODE_ORDER = ["normal", "economy", "super"];
+const PERFORMANCE_PROFILES = {
+  normal: {
+    label: "ECO OFF",
+    canvasScale: 1,
+    renderFps: 60,
+    audioAnalysisIntervalMs: 0,
+    camera: { width: 1920, height: 1080, frameRate: 60 },
+    delayPixelBudget: 1280 * 720,
+  },
+  economy: {
+    label: "ECO ON",
+    canvasScale: 0.6,
+    renderFps: 24,
+    audioAnalysisIntervalMs: 100,
+    camera: { width: 1280, height: 720, frameRate: 24 },
+    delayPixelBudget: 960 * 540,
+  },
+  super: {
+    label: "ECO MAX",
+    canvasScale: 0.3,
+    renderFps: 12,
+    audioAnalysisIntervalMs: 200,
+    camera: { width: 960, height: 540, frameRate: 12 },
+    delayPixelBudget: 640 * 360,
+  },
+};
 const AUDIO_ANALYSIS_WIDTH = 64;
 const AUDIO_ANALYSIS_HEIGHT = 36;
 const AUDIO_MAX_GAIN = 0.12;
@@ -210,8 +239,11 @@ function updateAudioEnvelopeToggle() {
 }
 
 function updateEconomyToggle() {
-  economyToggle.setAttribute("aria-pressed", state.economyEnabled ? "true" : "false");
-  economyToggle.textContent = state.economyEnabled ? "ECO ON" : "ECO OFF";
+  const profile = getPerformanceProfile();
+  economyToggle.dataset.mode = state.economyMode;
+  economyToggle.setAttribute("aria-pressed", state.economyMode === "normal" ? "false" : "true");
+  economyToggle.setAttribute("aria-label", `Economy mode: ${state.economyMode}`);
+  economyToggle.textContent = profile.label;
 }
 
 function updateControlsToggle() {
@@ -429,10 +461,8 @@ function updateAudioFromFrame(renderedAt = performance.now()) {
     return;
   }
 
-  if (
-    state.economyEnabled &&
-    renderedAt - state.lastAudioAnalysisAt < ECONOMY_AUDIO_ANALYSIS_INTERVAL_MS
-  ) {
+  const { audioAnalysisIntervalMs } = getPerformanceProfile();
+  if (audioAnalysisIntervalMs > 0 && renderedAt < state.lastAudioAnalysisAt) {
     return;
   }
 
@@ -457,21 +487,48 @@ function updateAudioFromFrame(renderedAt = performance.now()) {
   }
 
   state.lastAudioAnalysis = frame;
-  state.lastAudioAnalysisAt = renderedAt;
+  if (audioAnalysisIntervalMs <= 0) {
+    state.lastAudioAnalysisAt = renderedAt;
+  } else if (state.lastAudioAnalysisAt <= 0) {
+    state.lastAudioAnalysisAt = renderedAt + audioAnalysisIntervalMs;
+  } else {
+    state.lastAudioAnalysisAt += audioAnalysisIntervalMs;
+    if (state.lastAudioAnalysisAt <= renderedAt) {
+      state.lastAudioAnalysisAt = renderedAt + audioAnalysisIntervalMs;
+    }
+  }
 }
 
 async function toggleAudio() {
   try {
-    ensureAudioGraph();
-    await state.audioContext.resume();
-    state.audioEnabled = !state.audioEnabled;
-    state.lastAudioAnalysis = null;
-    state.lastAudioAnalysisAt = 0;
+    if (state.audioEnabled) {
+      state.audioEnabled = false;
+      state.lastAudioAnalysis = null;
+      state.lastAudioAnalysisAt = 0;
 
-    if (!state.audioEnabled) {
-      state.audioMasterGain.gain.setTargetAtTime(0, state.audioContext.currentTime, 0.03);
+      const now = state.audioContext.currentTime;
+      state.audioMasterGain.gain.cancelScheduledValues(now);
+      state.audioMasterGain.gain.setValueAtTime(0, now);
+      state.audioVoices.forEach((voice) => {
+        voice.voiceGain.gain.cancelScheduledValues(now);
+        voice.voiceGain.gain.setValueAtTime(0, now);
+        voice.modulatorGain.gain.cancelScheduledValues(now);
+        voice.modulatorGain.gain.setValueAtTime(0, now);
+      });
+      updateAudioToggle();
+      try {
+        await state.audioContext.suspend();
+      } catch (error) {
+        console.warn("Audio processing could not be suspended.", error);
+      }
+      return;
     }
 
+    ensureAudioGraph();
+    await state.audioContext.resume();
+    state.audioEnabled = true;
+    state.lastAudioAnalysis = null;
+    state.lastAudioAnalysisAt = 0;
     updateAudioToggle();
   } catch (error) {
     console.error(error);
@@ -487,14 +544,16 @@ function toggleAudioEnvelope() {
   updateAudioEnvelopeToggle();
 }
 
+function getPerformanceProfile() {
+  return PERFORMANCE_PROFILES[state.economyMode];
+}
+
 async function applyCameraPerformanceConstraints() {
   if (!state.track?.applyConstraints) {
     return;
   }
 
-  const { width, height, frameRate } = state.economyEnabled
-    ? CAMERA_ECONOMY_CONSTRAINTS
-    : CAMERA_NORMAL_CONSTRAINTS;
+  const { width, height, frameRate } = getPerformanceProfile().camera;
 
   try {
     await state.track.applyConstraints({
@@ -508,13 +567,21 @@ async function applyCameraPerformanceConstraints() {
 }
 
 async function toggleEconomy() {
-  state.economyEnabled = !state.economyEnabled;
+  const currentIndex = PERFORMANCE_MODE_ORDER.indexOf(state.economyMode);
+  const changeToken = state.performanceChangeToken + 1;
+  state.performanceChangeToken = changeToken;
+  state.economyMode = PERFORMANCE_MODE_ORDER[(currentIndex + 1) % PERFORMANCE_MODE_ORDER.length];
   state.lastFrameAt = 0;
+  state.nextFrameAt = 0;
   state.lastAudioAnalysisAt = 0;
+  stopFilteredRender();
   updateEconomyToggle();
   resizeFilteredPreview(true);
   refreshFilterRendering();
   await applyCameraPerformanceConstraints();
+  if (changeToken !== state.performanceChangeToken) {
+    await applyCameraPerformanceConstraints();
+  }
 }
 
 function toggleControlsVisibility() {
@@ -544,6 +611,62 @@ function onFullscreenChange() {
   refreshViewportLayout();
   window.requestAnimationFrame(refreshViewportLayout);
   window.setTimeout(refreshViewportLayout, 250);
+}
+
+async function onVisibilityChange() {
+  const changeToken = state.visibilityChangeToken + 1;
+  state.visibilityChangeToken = changeToken;
+  state.pageVisible = !document.hidden;
+  state.lastFrameAt = 0;
+  state.nextFrameAt = 0;
+
+  if (!state.pageVisible) {
+    stopFilteredRender();
+    video.pause();
+    if (state.track) {
+      state.track.enabled = false;
+    }
+    try {
+      if (state.audioContext?.state === "running") {
+        await state.audioContext.suspend();
+      }
+    } catch (error) {
+      console.warn("Audio processing could not be suspended.", error);
+    }
+    if (
+      changeToken !== state.visibilityChangeToken
+      && state.pageVisible
+      && state.audioEnabled
+      && state.audioContext?.state === "suspended"
+    ) {
+      await state.audioContext.resume().catch((error) => {
+        console.warn("Audio processing could not resume automatically.", error);
+      });
+    }
+    return;
+  }
+
+  if (state.track) {
+    state.track.enabled = true;
+  }
+
+  try {
+    if (state.stream) {
+      await video.play();
+    }
+    if (changeToken !== state.visibilityChangeToken || !state.pageVisible) {
+      video.pause();
+      return;
+    }
+    if (state.audioEnabled && state.audioContext?.state === "suspended") {
+      await state.audioContext.resume();
+    }
+  } catch (error) {
+    console.warn("Media processing could not resume automatically.", error);
+  }
+
+  resetTrailTexture();
+  refreshFilterRendering();
 }
 
 function createShader(shaderType, source) {
@@ -679,6 +802,7 @@ function createGlResources() {
   const trailTextures = [createTexture(), createTexture()];
   const trailFramebuffers = trailTextures.map(createFramebuffer);
   const delayTextures = Array.from({ length: TRAIL_DELAY_BUFFER_SIZE }, createTexture);
+  const delayFramebuffers = delayTextures.map(createFramebuffer);
 
   gl.useProgram(accumulateProgram);
   bindQuadAttributes(accumulateProgram, quadBuffer);
@@ -703,11 +827,14 @@ function createGlResources() {
     trailTextures,
     trailFramebuffers,
     delayTextures,
+    delayFramebuffers,
+    delayFrameTimestamps: Array(TRAIL_DELAY_BUFFER_SIZE).fill(0),
     trailReadIndex: 0,
     delayWriteIndex: 0,
     delayFrameCount: 0,
     lastDelayCaptureAt: 0,
     trailSize: { width: 1, height: 1 },
+    delaySize: { width: 1, height: 1 },
     uvScaleLocation,
     uvOffsetLocation,
     contrastEnabledLocation,
@@ -763,6 +890,42 @@ function syncFilterVisibility() {
   filteredPreview.style.opacity = filteredActive ? "1" : "0";
 }
 
+function getDelayTextureSize() {
+  const canvasWidth = filteredPreview.width || 1;
+  const canvasHeight = filteredPreview.height || 1;
+  const pixelBudget = getPerformanceProfile().delayPixelBudget;
+  const reduction = Math.min(1, Math.sqrt(pixelBudget / (canvasWidth * canvasHeight)));
+
+  return {
+    width: Math.max(1, Math.round(canvasWidth * reduction)),
+    height: Math.max(1, Math.round(canvasHeight * reduction)),
+  };
+}
+
+function resetDelayBuffer(forceResize = false) {
+  const targetSize = state.trailDelayAmount > 0
+    ? getDelayTextureSize()
+    : { width: 1, height: 1 };
+  const sizeChanged = targetSize.width !== glResources.delaySize.width
+    || targetSize.height !== glResources.delaySize.height;
+
+  if (forceResize || sizeChanged) {
+    glResources.delayTextures.forEach((texture, index) => {
+      setEmptyTexture(texture, targetSize.width, targetSize.height);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, glResources.delayFramebuffers[index]);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+    });
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    glResources.delaySize = targetSize;
+  }
+
+  glResources.delayWriteIndex = 0;
+  glResources.delayFrameCount = 0;
+  glResources.delayFrameTimestamps.fill(0);
+  glResources.lastDelayCaptureAt = 0;
+}
+
 function resetTrailTexture() {
   if (!filtersAvailable) return;
 
@@ -777,14 +940,14 @@ function resetTrailTexture() {
     gl.clear(gl.COLOR_BUFFER_BIT);
   });
 
+  resetDelayBuffer(true);
+
   gl.clearColor(0, 0, 0, 1);
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   glResources.trailReadIndex = 0;
-  glResources.delayWriteIndex = 0;
-  glResources.delayFrameCount = 0;
-  glResources.lastDelayCaptureAt = 0;
   glResources.trailSize = { width, height };
   state.lastFrameAt = 0;
+  state.nextFrameAt = 0;
 }
 
 async function toggleFullscreen() {
@@ -808,9 +971,7 @@ function stopCurrentStream() {
 }
 
 function getVideoConstraints(facingMode, exact = false) {
-  const { width, height, frameRate } = state.economyEnabled
-    ? CAMERA_ECONOMY_CONSTRAINTS
-    : CAMERA_NORMAL_CONSTRAINTS;
+  const { width, height, frameRate } = getPerformanceProfile().camera;
 
   return {
     facingMode: exact ? { exact: facingMode } : { ideal: facingMode },
@@ -875,8 +1036,11 @@ async function startCameraStream(facingMode = state.preferredFacingMode) {
   state.preferredFacingMode = facingMode;
   state.activeFacingMode = detectedFacingMode;
   video.srcObject = stream;
+  track.enabled = state.pageVisible;
 
-  await video.play();
+  if (state.pageVisible) {
+    await video.play();
+  }
   configureTrackCapabilities(track);
   resizeFilteredPreview();
   applyPreviewTransform();
@@ -950,7 +1114,7 @@ function applyPreviewTransform() {
 }
 
 function resizeFilteredPreview(force = false) {
-  const scale = state.economyEnabled ? ECONOMY_CANVAS_SCALE : 1;
+  const scale = getPerformanceProfile().canvasScale;
   const width = Math.max(1, Math.round((previewShell.clientWidth || window.innerWidth) * scale));
   const height = Math.max(1, Math.round((previewShell.clientHeight || window.innerHeight) * scale));
 
@@ -989,9 +1153,11 @@ function getCoverUvTransform() {
   };
 }
 
-function getTrailAmount(value) {
+function getTrailAmount(value, frameDeltaMs = TRAIL_REFERENCE_FRAME_MS) {
   const normalizedValue = clamp(value / 2000, 0, 1);
-  return Math.pow(normalizedValue, 0.52) * TRAIL_MAX_BLEND;
+  const referenceBlend = Math.pow(normalizedValue, 0.52) * TRAIL_MAX_BLEND;
+  const elapsedFrames = clamp(frameDeltaMs / TRAIL_REFERENCE_FRAME_MS, 0.25, 8);
+  return Math.pow(referenceBlend, elapsedFrames);
 }
 
 function getContrastStrength(value) {
@@ -1005,20 +1171,19 @@ function getContrastThreshold(value) {
 
 function getDelaySettings() {
   const delayMs = clamp(state.trailDelayAmount, 0, 2000);
-  const captureIntervalMs = Math.max(TRAIL_DELAY_BASE_INTERVAL_MS, delayMs / TRAIL_DELAY_BUFFER_SIZE);
-  const frameDelay = Math.min(
-    TRAIL_DELAY_BUFFER_SIZE - 1,
-    Math.round(delayMs / captureIntervalMs),
+  const captureIntervalMs = Math.max(
+    TRAIL_DELAY_BASE_INTERVAL_MS,
+    delayMs / (TRAIL_DELAY_BUFFER_SIZE - 1),
   );
 
-  return { captureIntervalMs, delayMs, frameDelay };
+  return { captureIntervalMs, delayMs };
 }
 
 function getWrappedDelayIndex(index) {
   return (index + TRAIL_DELAY_BUFFER_SIZE) % TRAIL_DELAY_BUFFER_SIZE;
 }
 
-function captureDelayFrame(now) {
+function captureDelayFrame(now, uvTransform) {
   const { captureIntervalMs, delayMs } = getDelaySettings();
 
   if (delayMs <= 0) {
@@ -1032,40 +1197,82 @@ function captureDelayFrame(now) {
     return;
   }
 
-  gl.activeTexture(gl.TEXTURE2);
-  gl.bindTexture(gl.TEXTURE_2D, glResources.delayTextures[glResources.delayWriteIndex]);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
+  const writeIndex = glResources.delayWriteIndex;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, glResources.delayFramebuffers[writeIndex]);
+  gl.viewport(0, 0, glResources.delaySize.width, glResources.delaySize.height);
+  gl.useProgram(glResources.accumulateProgram);
+  bindQuadAttributes(glResources.accumulateProgram, glResources.quadBuffer);
 
-  glResources.delayWriteIndex = getWrappedDelayIndex(glResources.delayWriteIndex + 1);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, glResources.videoTexture);
+  gl.activeTexture(gl.TEXTURE1);
+  gl.bindTexture(gl.TEXTURE_2D, glResources.trailTextures[glResources.trailReadIndex]);
+
+  gl.uniform2f(glResources.uvScaleLocation, uvTransform.scaleX, uvTransform.scaleY);
+  gl.uniform2f(glResources.uvOffsetLocation, uvTransform.offsetX, uvTransform.offsetY);
+  gl.uniform1f(glResources.contrastEnabledLocation, 0);
+  gl.uniform1f(glResources.trailEnabledLocation, 0);
+  gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+  glResources.delayFrameTimestamps[writeIndex] = now;
+  glResources.delayWriteIndex = getWrappedDelayIndex(writeIndex + 1);
   glResources.delayFrameCount = Math.min(glResources.delayFrameCount + 1, TRAIL_DELAY_BUFFER_SIZE);
   glResources.lastDelayCaptureAt = now;
 }
 
-function getDelayedVideoTexture() {
-  const { delayMs, frameDelay } = getDelaySettings();
+function getDelayedVideoSource(now) {
+  const { delayMs } = getDelaySettings();
 
   if (delayMs <= 0 || glResources.delayFrameCount === 0) {
-    return glResources.videoTexture;
+    return { texture: glResources.videoTexture, preCropped: false };
   }
 
-  const availableDelay = Math.min(frameDelay, glResources.delayFrameCount - 1);
+  const targetTime = now - delayMs;
   const latestIndex = getWrappedDelayIndex(glResources.delayWriteIndex - 1);
-  return glResources.delayTextures[getWrappedDelayIndex(latestIndex - availableDelay)];
+  let selectedIndex = latestIndex;
+
+  for (let offset = 0; offset < glResources.delayFrameCount; offset += 1) {
+    const index = getWrappedDelayIndex(latestIndex - offset);
+    selectedIndex = index;
+    if (glResources.delayFrameTimestamps[index] <= targetTime) {
+      break;
+    }
+  }
+
+  return { texture: glResources.delayTextures[selectedIndex], preCropped: true };
 }
 
 function shouldSkipRenderFrame(now) {
-  if (!state.economyEnabled || state.lastFrameAt <= 0) {
-    return false;
+  const frameIntervalMs = 1000 / getPerformanceProfile().renderFps;
+
+  if (state.nextFrameAt > 0 && now + 0.5 < state.nextFrameAt) {
+    return true;
   }
 
-  return now - state.lastFrameAt < 1000 / ECONOMY_RENDER_FPS;
+  if (state.nextFrameAt <= 0) {
+    state.nextFrameAt = now + frameIntervalMs;
+  } else {
+    state.nextFrameAt += frameIntervalMs;
+    if (state.nextFrameAt <= now) {
+      state.nextFrameAt = now + frameIntervalMs;
+    }
+  }
+
+  return false;
 }
 
 function scheduleFilteredRender() {
-  if (state.renderFrameId !== null || !shouldRenderFilteredPreview()) {
+  if (state.renderFrameId !== null || !state.pageVisible || !shouldRenderFilteredPreview()) {
     return;
   }
 
+  if (typeof video.requestVideoFrameCallback === "function") {
+    state.renderScheduler = "video";
+    state.renderFrameId = video.requestVideoFrameCallback(renderFilteredFrame);
+    return;
+  }
+
+  state.renderScheduler = "animation";
   state.renderFrameId = window.requestAnimationFrame(renderFilteredFrame);
 }
 
@@ -1074,14 +1281,20 @@ function stopFilteredRender() {
     return;
   }
 
-  window.cancelAnimationFrame(state.renderFrameId);
+  if (state.renderScheduler === "video" && typeof video.cancelVideoFrameCallback === "function") {
+    video.cancelVideoFrameCallback(state.renderFrameId);
+  } else {
+    window.cancelAnimationFrame(state.renderFrameId);
+  }
   state.renderFrameId = null;
+  state.renderScheduler = null;
 }
 
 function renderFilteredFrame(now = performance.now()) {
   state.renderFrameId = null;
+  state.renderScheduler = null;
 
-  if (!shouldRenderFilteredPreview()) {
+  if (!state.pageVisible || !shouldRenderFilteredPreview()) {
     return;
   }
 
@@ -1107,7 +1320,10 @@ function renderFilteredFrame(now = performance.now()) {
   const trailEnabled = state.trailAmount > 0;
   const contrastStrength = getContrastStrength(state.contrastThresholdAmount);
   const contrastThreshold = getContrastThreshold(state.contrastThresholdAmount);
-  const trailAmount = trailEnabled ? getTrailAmount(state.trailAmount) : 0;
+  const frameDeltaMs = state.lastFrameAt > 0
+    ? now - state.lastFrameAt
+    : 1000 / getPerformanceProfile().renderFps;
+  const trailAmount = trailEnabled ? getTrailAmount(state.trailAmount, frameDeltaMs) : 0;
 
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, glResources.videoTexture);
@@ -1120,7 +1336,11 @@ function renderFilteredFrame(now = performance.now()) {
     return;
   }
 
-  captureDelayFrame(now);
+  captureDelayFrame(now, uvTransform);
+  const videoSource = getDelayedVideoSource(now);
+  const sourceUvTransform = videoSource.preCropped
+    ? { scaleX: 1, scaleY: 1, offsetX: 0, offsetY: 0 }
+    : uvTransform;
 
   const readIndex = glResources.trailReadIndex;
   const writeIndex = 1 - readIndex;
@@ -1138,13 +1358,13 @@ function renderFilteredFrame(now = performance.now()) {
   gl.clear(gl.COLOR_BUFFER_BIT);
 
   gl.activeTexture(gl.TEXTURE0);
-  gl.bindTexture(gl.TEXTURE_2D, getDelayedVideoTexture());
+  gl.bindTexture(gl.TEXTURE_2D, videoSource.texture);
 
   gl.activeTexture(gl.TEXTURE1);
   gl.bindTexture(gl.TEXTURE_2D, glResources.trailTextures[readIndex]);
 
-  gl.uniform2f(glResources.uvScaleLocation, uvTransform.scaleX, uvTransform.scaleY);
-  gl.uniform2f(glResources.uvOffsetLocation, uvTransform.offsetX, uvTransform.offsetY);
+  gl.uniform2f(glResources.uvScaleLocation, sourceUvTransform.scaleX, sourceUvTransform.scaleY);
+  gl.uniform2f(glResources.uvOffsetLocation, sourceUvTransform.offsetX, sourceUvTransform.offsetY);
   gl.uniform1f(glResources.contrastEnabledLocation, contrastEnabled ? 1 : 0);
   gl.uniform1f(glResources.thresholdLocation, contrastThreshold);
   gl.uniform1f(glResources.contrastStrengthLocation, contrastStrength);
@@ -1180,6 +1400,7 @@ function refreshFilterRendering() {
 
   stopFilteredRender();
   state.lastFrameAt = 0;
+  state.nextFrameAt = 0;
 }
 
 function onContrastThresholdSliderInput(event) {
@@ -1190,9 +1411,7 @@ function onContrastThresholdSliderInput(event) {
 
 function onTrailDelaySliderInput(event) {
   state.trailDelayAmount = Number(event.currentTarget.value);
-  glResources.delayWriteIndex = 0;
-  glResources.delayFrameCount = 0;
-  glResources.lastDelayCaptureAt = 0;
+  resetDelayBuffer();
   updateTrailControls();
   refreshFilterRendering();
 }
@@ -1408,6 +1627,7 @@ window.addEventListener("resize", refreshViewportLayout);
 window.visualViewport?.addEventListener("resize", refreshViewportLayout);
 window.visualViewport?.addEventListener("scroll", refreshViewportLayout);
 document.addEventListener("fullscreenchange", onFullscreenChange);
+document.addEventListener("visibilitychange", onVisibilityChange);
 audioToggle.addEventListener("click", toggleAudio);
 audioEnvelopeToggle.addEventListener("click", toggleAudioEnvelope);
 economyToggle.addEventListener("click", toggleEconomy);
