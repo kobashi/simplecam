@@ -95,7 +95,29 @@
             />
             <span id="audioReleaseValue" class="trail-slider-value">350</span>
           </label>
+          <label class="trail-slider">
+            <span class="trail-slider-label">OCT</span>
+            <input
+              id="audioOctaveSlider"
+              class="trail-slider-input"
+              type="range"
+              min="-2"
+              max="2"
+              step="1"
+              value="0"
+            />
+            <span id="audioOctaveValue" class="trail-slider-value">0</span>
+          </label>
         </div>
+        <button
+          id="controlsToggle"
+          class="controls-toggle"
+          type="button"
+          aria-label="Toggle controls visibility"
+          aria-pressed="true"
+        >
+          UI ON
+        </button>
         <div class="top-controls">
           <button
             id="audioToggle"
@@ -136,6 +158,6 @@
       </section>
     </main>
 
-    <script type="module" src="./app.js?v=audio-envelope-clickfix-1"></script>
+    <script type="module" src="./app.js?v=ui-audio-octave-1"></script>
   </body>
 </html>

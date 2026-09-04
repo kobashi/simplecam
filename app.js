@@ -4,6 +4,7 @@ const previewShell = document.querySelector(".preview-shell");
 const gestureSurface = document.getElementById("gestureSurface");
 const audioToggle = document.getElementById("audioToggle");
 const audioEnvelopeToggle = document.getElementById("audioEnvelopeToggle");
+const controlsToggle = document.getElementById("controlsToggle");
 const cameraToggle = document.getElementById("cameraToggle");
 const fullscreenToggle = document.getElementById("fullscreenToggle");
 const contrastThresholdSlider = document.getElementById("contrastThresholdSlider");
@@ -11,11 +12,13 @@ const trailDelaySlider = document.getElementById("trailDelaySlider");
 const trailAmountSlider = document.getElementById("trailAmountSlider");
 const audioThresholdSlider = document.getElementById("audioThresholdSlider");
 const audioReleaseSlider = document.getElementById("audioReleaseSlider");
+const audioOctaveSlider = document.getElementById("audioOctaveSlider");
 const contrastThresholdValue = document.getElementById("contrastThresholdValue");
 const trailDelayValue = document.getElementById("trailDelayValue");
 const trailAmountValue = document.getElementById("trailAmountValue");
 const audioThresholdValue = document.getElementById("audioThresholdValue");
 const audioReleaseValue = document.getElementById("audioReleaseValue");
+const audioOctaveValue = document.getElementById("audioOctaveValue");
 const statusPanel = document.getElementById("statusPanel");
 
 const gl = filteredPreview.getContext("webgl", {
@@ -45,8 +48,10 @@ const state = {
   isSwitchingCamera: false,
   audioEnabled: false,
   audioEnvelopeEnabled: false,
+  controlsVisible: true,
   audioThresholdAmount: Number(audioThresholdSlider.value),
   audioReleaseAmount: Number(audioReleaseSlider.value),
+  audioOctaveAmount: Number(audioOctaveSlider.value),
   audioContext: null,
   audioMasterGain: null,
   audioLimiter: null,
@@ -196,6 +201,12 @@ function updateAudioEnvelopeToggle() {
   audioEnvelopeToggle.textContent = state.audioEnvelopeEnabled ? "ENV ON" : "ENV OFF";
 }
 
+function updateControlsToggle() {
+  document.body.classList.toggle("controls-hidden", !state.controlsVisible);
+  controlsToggle.setAttribute("aria-pressed", state.controlsVisible ? "true" : "false");
+  controlsToggle.textContent = state.controlsVisible ? "UI ON" : "UI OFF";
+}
+
 function createAudioVoice(audioContext) {
   const carrier = audioContext.createOscillator();
   const modulator = audioContext.createOscillator();
@@ -234,7 +245,7 @@ function ensureAudioGraph() {
       plane,
       noteIndex,
       noteRatio,
-      frequency: AUDIO_BASE_C * noteRatio * (2 ** plane.octaveOffset),
+      baseFrequency: AUDIO_BASE_C * noteRatio * (2 ** plane.octaveOffset),
       ...createAudioVoice(audioContext),
     }))
   ));
@@ -350,6 +361,10 @@ function holdAudioParamAtTime(audioParam, time) {
   audioParam.setValueAtTime(currentValue, time);
 }
 
+function getAudioVoiceFrequency(voice) {
+  return voice.baseFrequency * (2 ** state.audioOctaveAmount);
+}
+
 function applyContinuousAudio(frame, now, masterGain) {
   state.audioMasterGain.gain.setTargetAtTime(masterGain, now, 0.035);
 
@@ -359,12 +374,13 @@ function applyContinuousAudio(frame, now, masterGain) {
     const dominance = note.active ? note.dominance : 0;
     const fmDepth = frame.saturation * dominance * AUDIO_FM_INDEX;
     const voiceGain = note.active ? ((0.12 + (intensity * 0.88)) * dominance * AUDIO_VOICE_MIX_GAIN) : 0;
+    const frequency = getAudioVoiceFrequency(voice);
 
     holdAudioParamAtTime(voice.modulatorGain.gain, now);
     holdAudioParamAtTime(voice.voiceGain.gain, now);
-    voice.carrier.frequency.setTargetAtTime(voice.frequency, now, 0.045);
-    voice.modulator.frequency.setTargetAtTime(voice.frequency * 2, now, 0.045);
-    voice.modulatorGain.gain.setTargetAtTime(voice.frequency * fmDepth, now, 0.045);
+    voice.carrier.frequency.setTargetAtTime(frequency, now, 0.045);
+    voice.modulator.frequency.setTargetAtTime(frequency * 2, now, 0.045);
+    voice.modulatorGain.gain.setTargetAtTime(frequency * fmDepth, now, 0.045);
     voice.voiceGain.gain.setTargetAtTime(voiceGain, now, 0.045);
   });
 }
@@ -382,11 +398,12 @@ function triggerEnvelopeAudio(frame, now, masterGain) {
     const peakGain = note.active ? ((0.12 + (intensity * 0.88)) * dominance * AUDIO_VOICE_MIX_GAIN) : 0;
     const attackEnd = now + AUDIO_ATTACK_TIME;
     const releaseEnd = attackEnd + releaseTime;
+    const frequency = getAudioVoiceFrequency(voice);
 
-    voice.carrier.frequency.setValueAtTime(voice.frequency, now);
-    voice.modulator.frequency.setValueAtTime(voice.frequency * 2, now);
+    voice.carrier.frequency.setValueAtTime(frequency, now);
+    voice.modulator.frequency.setValueAtTime(frequency * 2, now);
     holdAudioParamAtTime(voice.modulatorGain.gain, now);
-    voice.modulatorGain.gain.setTargetAtTime(voice.frequency * fmDepth, now, 0.01);
+    voice.modulatorGain.gain.setTargetAtTime(frequency * fmDepth, now, 0.01);
 
     holdAudioParamAtTime(voice.voiceGain.gain, now);
     voice.voiceGain.gain.linearRampToValueAtTime(peakGain, attackEnd);
@@ -446,6 +463,11 @@ function toggleAudioEnvelope() {
   state.audioEnvelopeEnabled = !state.audioEnvelopeEnabled;
   state.lastAudioAnalysis = null;
   updateAudioEnvelopeToggle();
+}
+
+function toggleControlsVisibility() {
+  state.controlsVisible = !state.controlsVisible;
+  updateControlsToggle();
 }
 
 function updateFullscreenButton() {
@@ -654,6 +676,7 @@ function updateFilterAvailability() {
   trailAmountSlider.disabled = !filtersAvailable;
   audioThresholdSlider.disabled = !filtersAvailable;
   audioReleaseSlider.disabled = !filtersAvailable;
+  audioOctaveSlider.disabled = !filtersAvailable;
 }
 
 function formatStrength(value) {
@@ -666,11 +689,15 @@ function updateTrailControls() {
   trailAmountSlider.value = String(state.trailAmount);
   audioThresholdSlider.value = String(state.audioThresholdAmount);
   audioReleaseSlider.value = String(state.audioReleaseAmount);
+  audioOctaveSlider.value = String(state.audioOctaveAmount);
   contrastThresholdValue.textContent = formatStrength(state.contrastThresholdAmount);
   trailDelayValue.textContent = formatStrength(state.trailDelayAmount);
   trailAmountValue.textContent = formatStrength(state.trailAmount);
   audioThresholdValue.textContent = formatStrength(state.audioThresholdAmount);
   audioReleaseValue.textContent = formatStrength(state.audioReleaseAmount);
+  audioOctaveValue.textContent = state.audioOctaveAmount > 0
+    ? `+${state.audioOctaveAmount}`
+    : formatStrength(state.audioOctaveAmount);
 }
 
 function shouldRenderFilteredPreview() {
@@ -1119,6 +1146,11 @@ function onAudioReleaseSliderInput(event) {
   updateTrailControls();
 }
 
+function onAudioOctaveSliderInput(event) {
+  state.audioOctaveAmount = Number(event.currentTarget.value);
+  updateTrailControls();
+}
+
 function getPointDistance(points) {
   const [a, b] = points;
   return Math.hypot(b.clientX - a.clientX, b.clientY - a.clientY);
@@ -1307,6 +1339,7 @@ window.visualViewport?.addEventListener("scroll", refreshViewportLayout);
 document.addEventListener("fullscreenchange", onFullscreenChange);
 audioToggle.addEventListener("click", toggleAudio);
 audioEnvelopeToggle.addEventListener("click", toggleAudioEnvelope);
+controlsToggle.addEventListener("click", toggleControlsVisibility);
 cameraToggle.addEventListener("click", toggleCamera);
 fullscreenToggle.addEventListener("click", toggleFullscreen);
 contrastThresholdSlider.addEventListener("input", onContrastThresholdSliderInput);
@@ -1314,11 +1347,13 @@ trailDelaySlider.addEventListener("input", onTrailDelaySliderInput);
 trailAmountSlider.addEventListener("input", onTrailAmountSliderInput);
 audioThresholdSlider.addEventListener("input", onAudioThresholdSliderInput);
 audioReleaseSlider.addEventListener("input", onAudioReleaseSliderInput);
+audioOctaveSlider.addEventListener("input", onAudioOctaveSliderInput);
 
 updateFullscreenButton();
 updateViewportMetrics();
 updateAudioToggle();
 updateAudioEnvelopeToggle();
+updateControlsToggle();
 updateCameraToggle();
 updateFilterAvailability();
 updateTrailControls();
