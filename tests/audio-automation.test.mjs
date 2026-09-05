@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   AudioAutomation,
   getAudioFmDepth,
+  getAudioFmLfoDepth,
   getAudioGainExponent,
   getAudioGainMultiplier,
   limitAudioPolyphony,
@@ -114,6 +115,12 @@ test("gain control maps zero to current level and maximum to ten times the level
 test("FM dominance curve remains audible for small image regions", () => {
   close(getAudioFmDepth(0.8, 0.04, 5.5, 0.5), 0.88);
   close(getAudioFmDepth(0.8, 0.04, 0, 1), 0);
+});
+
+test("FM LFO remains subtle and turns off with zero modulation depth", () => {
+  close(getAudioFmLfoDepth(440, 2, 0.14), 123.2);
+  close(getAudioFmLfoDepth(440, 0, 0.14), 0);
+  close(getAudioFmLfoDepth(440, 2, 0), 0);
 });
 
 test("polyphony limiter enforces every setting from 1 through 12", () => {
