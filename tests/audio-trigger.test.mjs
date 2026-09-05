@@ -27,6 +27,7 @@ function harness() {
     delta: 1,
     getAudioAnalysisDelta: () => context.delta,
     limitAudioPolyphony: (frame) => frame,
+    drawAudioMonitor() {},
     audioAutomation: { target() {} },
     triggerEnvelopeAudio: (_frame, time) => triggers.push(time),
     applyContinuousAudio() {},

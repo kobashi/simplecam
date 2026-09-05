@@ -202,6 +202,41 @@ body {
   gap: 0.46rem;
 }
 
+.audio-monitor-panel {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+    "label value"
+    "monitor monitor";
+  gap: 0.18rem 0.4rem;
+  margin-top: 0.46rem;
+  color: var(--muted);
+}
+
+.audio-monitor-label,
+.audio-monitor-value {
+  font-size: 0.36rem;
+  letter-spacing: 0.12em;
+}
+
+.audio-monitor-label {
+  grid-area: label;
+}
+
+.audio-monitor-value {
+  grid-area: value;
+}
+
+.audio-monitor {
+  grid-area: monitor;
+  display: block;
+  width: 100%;
+  height: 1.45rem;
+  border: 1px solid rgba(210, 210, 210, 0.1);
+  border-radius: 0.28rem;
+  background: rgba(18, 18, 18, 0.22);
+}
+
 .audio-control-buttons {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }

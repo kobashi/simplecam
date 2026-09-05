@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   AudioAutomation,
+  getAudioFmDepth,
   getAudioGainExponent,
   getAudioGainMultiplier,
+  limitAudioPolyphony,
 } from "../audio-automation.mjs";
 
 // Deliberately stale .value, like a browser read outside the render quantum.
@@ -103,10 +105,33 @@ test("native hold is used when available without reading stale .value", () => {
   close(automation.valueAt(param, 0.014), 0.5);
 });
 
-test("gain control maps zero to current level and maximum to six times the level", () => {
+test("gain control maps zero to current level and maximum to ten times the level", () => {
   close(getAudioGainMultiplier(0), 1);
-  close(getAudioGainMultiplier(50), 3.5);
-  close(getAudioGainMultiplier(100), 6);
+  close(getAudioGainMultiplier(50), 5.5);
+  close(getAudioGainMultiplier(100), 10);
+});
+
+test("FM dominance curve remains audible for small image regions", () => {
+  close(getAudioFmDepth(0.8, 0.04, 5.5, 0.5), 0.88);
+  close(getAudioFmDepth(0.8, 0.04, 0, 1), 0);
+});
+
+test("polyphony limiter enforces every setting from 1 through 12", () => {
+  const frame = {
+    notes: Array.from({ length: 12 }, (_, index) => ({
+      key: `voice-${index}`,
+      intensity: (index + 1) / 12,
+      dominance: (index + 1) / 12,
+      active: true,
+    })),
+  };
+
+  for (let limit = 1; limit <= 12; limit += 1) {
+    const result = limitAudioPolyphony(frame, limit);
+    const active = result.notes.filter((note) => note.active);
+    assert.equal(active.length, limit);
+    assert.deepEqual(active.map((note) => note.key), frame.notes.slice(12 - limit).map((note) => note.key));
+  }
 });
 
 test("curve control maps minimum, center and maximum to the requested exponents", () => {

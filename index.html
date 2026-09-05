@@ -7,7 +7,7 @@
       content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no"
     />
     <title>Camera Frame Preview</title>
-    <link rel="stylesheet" href="./styles.css?v=audio-gain-controls-1" />
+    <link rel="stylesheet" href="./styles.css?v=audio-poly-monitor-1" />
   </head>
   <body>
     <main class="app">
@@ -201,6 +201,18 @@
               <span id="audioCurveValue" class="trail-slider-value">+100</span>
             </label>
           </div>
+          <div class="audio-monitor-panel" aria-label="Polyphony monitor">
+            <span class="audio-monitor-label">POLY MONITOR</span>
+            <span id="audioMonitorValue" class="audio-monitor-value">0 / 12</span>
+            <canvas
+              id="audioMonitor"
+              class="audio-monitor"
+              width="360"
+              height="44"
+              role="img"
+              aria-label="0 selected voices with a polyphony limit of 12"
+            ></canvas>
+          </div>
         </section>
         <button
           id="controlsToggle"
@@ -252,6 +264,6 @@
       </section>
     </main>
 
-    <script type="module" src="./app.js?v=audio-compressor-1"></script>
+    <script type="module" src="./app.js?v=audio-poly-monitor-1"></script>
   </body>
 </html>

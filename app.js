@@ -1,8 +1,10 @@
 import {
   AudioAutomation,
+  getAudioFmDepth,
   getAudioGainExponent,
   getAudioGainMultiplier,
-} from "./audio-automation.mjs?v=audio-compressor-1";
+  limitAudioPolyphony,
+} from "./audio-automation.mjs?v=audio-poly-monitor-1";
 
 const audioAutomation = new AudioAutomation();
 const video = document.getElementById("camera");
@@ -36,6 +38,8 @@ const audioOctaveValue = document.getElementById("audioOctaveValue");
 const audioPolyphonyValue = document.getElementById("audioPolyphonyValue");
 const audioGainValue = document.getElementById("audioGainValue");
 const audioCurveValue = document.getElementById("audioCurveValue");
+const audioMonitor = document.getElementById("audioMonitor");
+const audioMonitorValue = document.getElementById("audioMonitorValue");
 const statusPanel = document.getElementById("statusPanel");
 const audioRegion = document.getElementById("audioRegion");
 const audioRegionHandles = [...audioRegion.querySelectorAll(".audio-region-handle")];
@@ -95,6 +99,8 @@ const state = {
   lastAudioAnalysis: null,
   lastAudioAnalysisAt: 0,
   nextAudioTriggerAt: 0,
+  lastAudioMonitorAt: 0,
+  lastVoicedFrame: null,
   audioRegion: {
     left: 0.2,
     top: 0.2,
@@ -161,6 +167,7 @@ const AUDIO_TRIGGER_INTERVAL = 0.08;
 const AUDIO_VOICE_MIX_GAIN = 1 / 3;
 const AUDIO_OUTPUT_GAIN = 0.78;
 const AUDIO_SOFT_CLIP_DRIVE = 1.45;
+const AUDIO_MONITOR_INTERVAL_MS = 1000 / 15;
 const AUDIO_PITCH_SATURATION_THRESHOLD = 0.12;
 const AUDIO_REGION_MIN_SIZE = 0.12;
 const AUDIO_REGION_HANDLE_INSET_PX = 22;
@@ -177,10 +184,12 @@ const AUDIO_RGB_ROTATIONS = [
   { label: "RBG", octaveOffsets: { r: -1, b: 0, g: 1 } },
 ];
 const AUDIO_TIMBRES = [
-  { label: "SIN", carrierType: "sine", modulatorType: "sine", fmIndex: 0, modulatorRatio: 1 },
-  { label: "TRI", carrierType: "triangle", modulatorType: "sine", fmIndex: 0.7, modulatorRatio: 1 },
-  { label: "FM", carrierType: "sine", modulatorType: "sine", fmIndex: 2.7, modulatorRatio: 2 },
+  { label: "SIN", carrierType: "sine", modulatorType: "sine", fmIndex: 0, modulatorRatio: 1, dominancePower: 1 },
+  { label: "TRI", carrierType: "triangle", modulatorType: "sine", fmIndex: 0.7, modulatorRatio: 1, dominancePower: 1 },
+  { label: "FM", carrierType: "sine", modulatorType: "sine", fmIndex: 5.5, modulatorRatio: 2, dominancePower: 0.5 },
 ];
+
+const audioMonitorContext = audioMonitor.getContext("2d", { alpha: true });
 
 const audioAnalysisCanvas = document.createElement("canvas");
 audioAnalysisCanvas.width = AUDIO_ANALYSIS_WIDTH;
@@ -545,25 +554,42 @@ function getAudioVoiceFrequency(voice) {
   return AUDIO_BASE_C * voice.noteRatio * (2 ** (octaveOffset + state.audioOctaveAmount));
 }
 
-function limitAudioPolyphony(frame) {
-  const rankedNotes = frame.notes
-    .map((note, index) => ({
-      index,
-      score: note.active ? note.dominance * (0.25 + (note.intensity * 0.75)) : 0,
-    }))
-    .filter((note) => note.score > 0)
-    .sort((a, b) => b.score - a.score);
-  const activeIndexes = new Set(
-    rankedNotes.slice(0, state.audioPolyphonyAmount).map((note) => note.index),
-  );
+function drawAudioMonitor(frame = null, renderedAt = performance.now(), force = false) {
+  if (!audioMonitorContext || (!force && renderedAt - state.lastAudioMonitorAt < AUDIO_MONITOR_INTERVAL_MS)) {
+    return;
+  }
 
-  return {
-    ...frame,
-    notes: frame.notes.map((note, index) => ({
-      ...note,
-      active: note.active && activeIndexes.has(index),
-    })),
-  };
+  state.lastAudioMonitorAt = renderedAt;
+  const notes = frame?.notes ?? [];
+  const activeCount = notes.reduce((count, note) => count + (note.active ? 1 : 0), 0);
+  const width = audioMonitor.width;
+  const height = audioMonitor.height;
+  const padding = 5;
+  const gap = 3;
+  const barWidth = (width - (padding * 2) - (gap * 11)) / 12;
+
+  audioMonitorValue.textContent = `${activeCount} / ${state.audioPolyphonyAmount}`;
+  audioMonitor.setAttribute(
+    "aria-label",
+    `${activeCount} selected voices with a polyphony limit of ${state.audioPolyphonyAmount}`,
+  );
+  audioMonitorContext.clearRect(0, 0, width, height);
+
+  for (let index = 0; index < 12; index += 1) {
+    const note = notes[index];
+    const x = padding + (index * (barWidth + gap));
+    const level = note?.active
+      ? clamp((note.intensity * 0.55) + (Math.sqrt(note.dominance) * 0.45), 0.12, 1)
+      : 0;
+    const barHeight = Math.max(2, (height - (padding * 2)) * level);
+
+    audioMonitorContext.fillStyle = "rgba(210, 210, 210, 0.12)";
+    audioMonitorContext.fillRect(x, padding, barWidth, height - (padding * 2));
+    if (level > 0) {
+      audioMonitorContext.fillStyle = "rgba(226, 226, 226, 0.68)";
+      audioMonitorContext.fillRect(x, height - padding - barHeight, barWidth, barHeight);
+    }
+  }
 }
 
 function applyContinuousAudio(frame, now, masterGain) {
@@ -574,7 +600,12 @@ function applyContinuousAudio(frame, now, masterGain) {
     const note = frame.notes[index];
     const intensity = note.active ? note.intensity : 0;
     const dominance = note.active ? note.dominance : 0;
-    const fmDepth = frame.saturation * dominance * timbre.fmIndex;
+    const fmDepth = getAudioFmDepth(
+      frame.saturation,
+      dominance,
+      timbre.fmIndex,
+      timbre.dominancePower,
+    );
     const voiceGain = note.active ? ((0.12 + (intensity * 0.88)) * dominance * AUDIO_VOICE_MIX_GAIN) : 0;
     const frequency = getAudioVoiceFrequency(voice);
 
@@ -593,7 +624,12 @@ function triggerEnvelopeAudio(frame, now) {
     const note = frame.notes[index];
     const intensity = note.active ? note.intensity : 0;
     const dominance = note.active ? note.dominance : 0;
-    const fmDepth = frame.saturation * dominance * timbre.fmIndex;
+    const fmDepth = getAudioFmDepth(
+      frame.saturation,
+      dominance,
+      timbre.fmIndex,
+      timbre.dominancePower,
+    );
     const peakGain = note.active ? ((0.12 + (intensity * 0.88)) * dominance * AUDIO_VOICE_MIX_GAIN) : 0;
     const attackEnd = now + AUDIO_ATTACK_TIME;
     const releaseEnd = attackEnd + releaseTime;
@@ -633,7 +669,9 @@ function updateAudioFromFrame(renderedAt = performance.now()) {
   const shouldTriggerEnvelope = state.audioEnvelopeEnabled
     && analysisDelta > 0 && analysisDelta >= triggerThreshold
     && now >= state.nextAudioTriggerAt;
-  const voicedFrame = limitAudioPolyphony(frame);
+  const voicedFrame = limitAudioPolyphony(frame, state.audioPolyphonyAmount);
+  state.lastVoicedFrame = voicedFrame;
+  drawAudioMonitor(voicedFrame, renderedAt);
 
   if (state.audioEnvelopeEnabled) {
     audioAutomation.target(state.audioMasterGain.gain, masterGain, now, 0.05);
@@ -666,6 +704,8 @@ async function toggleAudio() {
       state.audioEnabled = false;
       state.lastAudioAnalysis = null;
       state.lastAudioAnalysisAt = 0;
+      state.lastVoicedFrame = null;
+      drawAudioMonitor(null, performance.now(), true);
       state.audioTimbreChangeToken += 1;
       updateAudioToggle();
 
@@ -697,6 +737,8 @@ async function toggleAudio() {
     state.nextAudioTriggerAt = 0;
     state.lastAudioAnalysis = null;
     state.lastAudioAnalysisAt = 0;
+    state.lastVoicedFrame = null;
+    drawAudioMonitor(null, performance.now(), true);
     updateAudioToggle();
   } catch (error) {
     console.error(error);
@@ -1679,6 +1721,13 @@ function onAudioOctaveSliderInput(event) {
 
 function onAudioPolyphonySliderInput(event) {
   state.audioPolyphonyAmount = Number(event.currentTarget.value);
+  if (state.lastAudioAnalysis) {
+    state.lastVoicedFrame = limitAudioPolyphony(
+      state.lastAudioAnalysis,
+      state.audioPolyphonyAmount,
+    );
+  }
+  drawAudioMonitor(state.lastVoicedFrame, performance.now(), true);
   updateTrailControls();
 }
 
@@ -1972,6 +2021,7 @@ updateControlsToggle();
 updateCameraToggle();
 updateFilterAvailability();
 updateTrailControls();
+drawAudioMonitor(null, performance.now(), true);
 syncFilterVisibility();
 
 if (!navigator.mediaDevices?.getUserMedia) {

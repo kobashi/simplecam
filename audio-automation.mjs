@@ -66,10 +66,36 @@ export class AudioAutomation {
 
 export function getAudioGainMultiplier(amount) {
   const normalized = Math.max(0, Math.min(100, amount)) / 100;
-  return 1 + (normalized * 5);
+  return 1 + (normalized * 9);
 }
 
 export function getAudioGainExponent(amount) {
   const normalized = Math.max(-100, Math.min(100, amount)) / 100;
   return 1 + (normalized * 0.35);
+}
+
+export function getAudioFmDepth(saturation, dominance, index, dominancePower = 1) {
+  const safeSaturation = Math.max(0, Math.min(1, saturation));
+  const safeDominance = Math.max(0, Math.min(1, dominance));
+  return safeSaturation * (safeDominance ** dominancePower) * Math.max(0, index);
+}
+
+export function limitAudioPolyphony(frame, maxVoices) {
+  const voiceLimit = Math.max(1, Math.min(12, Math.round(maxVoices)));
+  const rankedNotes = frame.notes
+    .map((note, index) => ({
+      index,
+      score: note.active ? note.dominance * (0.25 + (note.intensity * 0.75)) : 0,
+    }))
+    .filter((note) => note.score > 0)
+    .sort((a, b) => b.score - a.score);
+  const activeIndexes = new Set(rankedNotes.slice(0, voiceLimit).map((note) => note.index));
+
+  return {
+    ...frame,
+    notes: frame.notes.map((note, index) => ({
+      ...note,
+      active: note.active && activeIndexes.has(index),
+    })),
+  };
 }
