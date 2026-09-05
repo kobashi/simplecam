@@ -7,7 +7,7 @@
       content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no"
     />
     <title>Camera Frame Preview</title>
-    <link rel="stylesheet" href="./styles.css?v=audio-handle-layer-1" />
+    <link rel="stylesheet" href="./styles.css?v=audio-trigger-smoothing-1" />
   </head>
   <body>
     <main class="app">
@@ -84,7 +84,7 @@
             <span id="trailAmountValue" class="trail-slider-value">0</span>
           </label>
         </div>
-        <section id="audioControls" class="audio-controls is-hidden" aria-label="Audio controls">
+        <section class="audio-controls" aria-label="Audio controls">
           <div class="audio-control-buttons">
             <button
               id="audioToggle"
@@ -187,16 +187,6 @@
         </button>
         <div class="top-controls">
           <button
-            id="audioPanelToggle"
-            class="audio-panel-toggle"
-            type="button"
-            aria-label="Toggle audio controls"
-            aria-expanded="false"
-            aria-controls="audioControls"
-          >
-            AUDIO
-          </button>
-          <button
             id="economyToggle"
             class="economy-toggle"
             type="button"
@@ -236,6 +226,6 @@
       </section>
     </main>
 
-    <script type="module" src="./app.js?v=audio-handle-layer-1"></script>
+    <script type="module" src="./app.js?v=audio-trigger-smoothing-1"></script>
   </body>
 </html>

@@ -1,9 +1,10 @@
+import { AudioAutomation } from "./audio-automation.mjs?v=1";
+
+const audioAutomation = new AudioAutomation();
 const video = document.getElementById("camera");
 const filteredPreview = document.getElementById("filteredPreview");
 const previewShell = document.querySelector(".preview-shell");
 const gestureSurface = document.getElementById("gestureSurface");
-const audioPanelToggle = document.getElementById("audioPanelToggle");
-const audioControls = document.getElementById("audioControls");
 const audioToggle = document.getElementById("audioToggle");
 const audioEnvelopeToggle = document.getElementById("audioEnvelopeToggle");
 const audioRgbToggle = document.getElementById("audioRgbToggle");
@@ -61,7 +62,6 @@ const state = {
   isSwitchingCamera: false,
   audioEnabled: false,
   audioEnvelopeEnabled: false,
-  audioPanelVisible: false,
   audioRgbRotationIndex: 0,
   audioTimbreIndex: 2,
   audioTimbreChangeToken: 0,
@@ -84,6 +84,7 @@ const state = {
   audioVoices: null,
   lastAudioAnalysis: null,
   lastAudioAnalysisAt: 0,
+  nextAudioTriggerAt: 0,
   audioRegion: {
     left: 0.2,
     top: 0.2,
@@ -146,6 +147,7 @@ const AUDIO_ANALYSIS_WIDTH = 64;
 const AUDIO_ANALYSIS_HEIGHT = 36;
 const AUDIO_MAX_GAIN = 0.1;
 const AUDIO_ATTACK_TIME = 0.028;
+const AUDIO_TRIGGER_INTERVAL = 0.08;
 const AUDIO_VOICE_MIX_GAIN = 1 / 3;
 const AUDIO_OUTPUT_GAIN = 0.78;
 const AUDIO_SOFT_CLIP_DRIVE = 1.45;
@@ -275,11 +277,6 @@ function updateAudioToggle() {
 function updateAudioEnvelopeToggle() {
   audioEnvelopeToggle.setAttribute("aria-pressed", state.audioEnvelopeEnabled ? "true" : "false");
   audioEnvelopeToggle.textContent = state.audioEnvelopeEnabled ? "ENV ON" : "ENV OFF";
-}
-
-function updateAudioPanel() {
-  audioPanelToggle.setAttribute("aria-expanded", state.audioPanelVisible ? "true" : "false");
-  audioControls.classList.toggle("is-hidden", !state.audioPanelVisible);
 }
 
 function updateAudioOptionButtons() {
@@ -533,17 +530,6 @@ function getAudioAnalysisDelta(currentFrame, previousFrame) {
   return Math.max(volumeDelta, saturationDelta, noteDelta);
 }
 
-function holdAudioParamAtTime(audioParam, time) {
-  if (typeof audioParam.cancelAndHoldAtTime === "function") {
-    audioParam.cancelAndHoldAtTime(time);
-    return;
-  }
-
-  const currentValue = audioParam.value;
-  audioParam.cancelScheduledValues(time);
-  audioParam.setValueAtTime(currentValue, time);
-}
-
 function getAudioVoiceFrequency(voice) {
   const octaveOffset = getAudioRgbRotation().octaveOffsets[voice.plane.key];
   return AUDIO_BASE_C * voice.noteRatio * (2 ** (octaveOffset + state.audioOctaveAmount));
@@ -572,7 +558,7 @@ function limitAudioPolyphony(frame) {
 
 function applyContinuousAudio(frame, now, masterGain) {
   const timbre = getAudioTimbre();
-  state.audioMasterGain.gain.setTargetAtTime(masterGain, now, 0.035);
+  audioAutomation.target(state.audioMasterGain.gain, masterGain, now, 0.035);
 
   state.audioVoices.forEach((voice, index) => {
     const note = frame.notes[index];
@@ -582,12 +568,10 @@ function applyContinuousAudio(frame, now, masterGain) {
     const voiceGain = note.active ? ((0.12 + (intensity * 0.88)) * dominance * AUDIO_VOICE_MIX_GAIN) : 0;
     const frequency = getAudioVoiceFrequency(voice);
 
-    holdAudioParamAtTime(voice.modulatorGain.gain, now);
-    holdAudioParamAtTime(voice.voiceGain.gain, now);
-    voice.carrier.frequency.setTargetAtTime(frequency, now, 0.045);
-    voice.modulator.frequency.setTargetAtTime(frequency * timbre.modulatorRatio, now, 0.045);
-    voice.modulatorGain.gain.setTargetAtTime(frequency * fmDepth, now, 0.045);
-    voice.voiceGain.gain.setTargetAtTime(voiceGain, now, 0.045);
+    audioAutomation.target(voice.carrier.frequency, frequency, now, 0.045);
+    audioAutomation.target(voice.modulator.frequency, frequency * timbre.modulatorRatio, now, 0.045);
+    audioAutomation.target(voice.modulatorGain.gain, frequency * fmDepth, now, 0.045);
+    audioAutomation.target(voice.voiceGain.gain, voiceGain, now, 0.045);
   });
 }
 
@@ -605,14 +589,13 @@ function triggerEnvelopeAudio(frame, now) {
     const releaseEnd = attackEnd + releaseTime;
     const frequency = getAudioVoiceFrequency(voice);
 
-    voice.carrier.frequency.setValueAtTime(frequency, now);
-    voice.modulator.frequency.setValueAtTime(frequency * timbre.modulatorRatio, now);
-    holdAudioParamAtTime(voice.modulatorGain.gain, now);
-    voice.modulatorGain.gain.setTargetAtTime(frequency * fmDepth, now, 0.01);
-
-    holdAudioParamAtTime(voice.voiceGain.gain, now);
-    voice.voiceGain.gain.linearRampToValueAtTime(peakGain, attackEnd);
-    voice.voiceGain.gain.linearRampToValueAtTime(0, releaseEnd);
+    audioAutomation.target(voice.carrier.frequency, frequency, now, 0.045);
+    audioAutomation.target(voice.modulator.frequency, frequency * timbre.modulatorRatio, now, 0.045);
+    audioAutomation.target(voice.modulatorGain.gain, frequency * fmDepth, now, 0.045);
+    audioAutomation.ramp(voice.voiceGain.gain, now, [
+      { value: peakGain, time: attackEnd },
+      { value: 0, time: releaseEnd },
+    ]);
   });
 }
 
@@ -635,13 +618,16 @@ function updateAudioFromFrame(renderedAt = performance.now()) {
   const masterGain = (frame.volume ** 1.35) * AUDIO_MAX_GAIN;
   const analysisDelta = getAudioAnalysisDelta(frame, state.lastAudioAnalysis);
   const triggerThreshold = clamp(state.audioThresholdAmount / 100, 0, 1);
-  const shouldTriggerEnvelope = state.audioEnvelopeEnabled && analysisDelta >= triggerThreshold;
+  const shouldTriggerEnvelope = state.audioEnvelopeEnabled
+    && analysisDelta > 0 && analysisDelta >= triggerThreshold
+    && now >= state.nextAudioTriggerAt;
   const voicedFrame = limitAudioPolyphony(frame);
 
   if (state.audioEnvelopeEnabled) {
-    state.audioMasterGain.gain.setTargetAtTime(masterGain, now, 0.05);
+    audioAutomation.target(state.audioMasterGain.gain, masterGain, now, 0.05);
     if (shouldTriggerEnvelope) {
       triggerEnvelopeAudio(voicedFrame, now);
+      state.nextAudioTriggerAt = now + AUDIO_TRIGGER_INTERVAL;
     }
   } else {
     applyContinuousAudio(voicedFrame, now, masterGain);
@@ -672,18 +658,14 @@ async function toggleAudio() {
       updateAudioToggle();
 
       const now = state.audioContext.currentTime;
-      holdAudioParamAtTime(state.audioMasterGain.gain, now);
-      state.audioMasterGain.gain.linearRampToValueAtTime(0, now + 0.025);
+      audioAutomation.ramp(state.audioMasterGain.gain, now, [{ value: 0, time: now + 0.025 }]);
       await new Promise((resolve) => window.setTimeout(resolve, 30));
 
       const silentAt = state.audioContext.currentTime;
-      state.audioMasterGain.gain.cancelScheduledValues(silentAt);
-      state.audioMasterGain.gain.setValueAtTime(0, silentAt);
+      audioAutomation.reset(state.audioMasterGain.gain, 0, silentAt);
       state.audioVoices.forEach((voice) => {
-        voice.voiceGain.gain.cancelScheduledValues(silentAt);
-        voice.voiceGain.gain.setValueAtTime(0, silentAt);
-        voice.modulatorGain.gain.cancelScheduledValues(silentAt);
-        voice.modulatorGain.gain.setValueAtTime(0, silentAt);
+        audioAutomation.reset(voice.voiceGain.gain, 0, silentAt);
+        audioAutomation.reset(voice.modulatorGain.gain, 0, silentAt);
       });
       try {
         await state.audioContext.suspend();
@@ -697,10 +679,10 @@ async function toggleAudio() {
     state.audioTimbreChangeToken += 1;
     applyAudioTimbreToVoices();
     const now = state.audioContext.currentTime;
-    state.audioOutputGain.gain.cancelScheduledValues(now);
-    state.audioOutputGain.gain.setValueAtTime(AUDIO_OUTPUT_GAIN, now);
+    audioAutomation.reset(state.audioOutputGain.gain, AUDIO_OUTPUT_GAIN, now);
     await state.audioContext.resume();
     state.audioEnabled = true;
+    state.nextAudioTriggerAt = 0;
     state.lastAudioAnalysis = null;
     state.lastAudioAnalysisAt = 0;
     updateAudioToggle();
@@ -716,13 +698,9 @@ async function toggleAudio() {
 
 function toggleAudioEnvelope() {
   state.audioEnvelopeEnabled = !state.audioEnvelopeEnabled;
+  state.nextAudioTriggerAt = 0;
   state.lastAudioAnalysis = null;
   updateAudioEnvelopeToggle();
-}
-
-function toggleAudioPanel() {
-  state.audioPanelVisible = !state.audioPanelVisible;
-  updateAudioPanel();
 }
 
 function rotateAudioRgbMapping() {
@@ -756,8 +734,7 @@ function cycleAudioTimbre() {
   }
 
   const now = state.audioContext.currentTime;
-  holdAudioParamAtTime(state.audioOutputGain.gain, now);
-  state.audioOutputGain.gain.linearRampToValueAtTime(0, now + 0.025);
+  audioAutomation.ramp(state.audioOutputGain.gain, now, [{ value: 0, time: now + 0.025 }]);
 
   window.setTimeout(() => {
     if (changeToken !== state.audioTimbreChangeToken || !state.audioOutputGain) {
@@ -766,9 +743,9 @@ function cycleAudioTimbre() {
 
     applyAudioTimbreToVoices();
     const resumeAt = state.audioContext.currentTime;
-    state.audioOutputGain.gain.cancelScheduledValues(resumeAt);
-    state.audioOutputGain.gain.setValueAtTime(0, resumeAt);
-    state.audioOutputGain.gain.linearRampToValueAtTime(AUDIO_OUTPUT_GAIN, resumeAt + 0.035);
+    audioAutomation.ramp(state.audioOutputGain.gain, resumeAt, [
+      { value: AUDIO_OUTPUT_GAIN, time: resumeAt + 0.035 },
+    ]);
   }, 30);
 }
 
@@ -1936,7 +1913,6 @@ document.addEventListener("fullscreenchange", onFullscreenChange);
 document.addEventListener("visibilitychange", onVisibilityChange);
 audioToggle.addEventListener("click", toggleAudio);
 audioEnvelopeToggle.addEventListener("click", toggleAudioEnvelope);
-audioPanelToggle.addEventListener("click", toggleAudioPanel);
 audioRgbToggle.addEventListener("click", rotateAudioRgbMapping);
 audioTimbreToggle.addEventListener("click", cycleAudioTimbre);
 economyToggle.addEventListener("click", toggleEconomy);
@@ -1956,7 +1932,6 @@ updateFullscreenButton();
 updateViewportMetrics();
 updateAudioToggle();
 updateAudioEnvelopeToggle();
-updateAudioPanel();
 updateAudioOptionButtons();
 updateEconomyToggle();
 updateMirrorToggle();
