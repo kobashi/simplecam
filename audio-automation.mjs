@@ -63,3 +63,13 @@ export class AudioAutomation {
     this.schedules.set(param, { start: time, value, points: [] });
   }
 }
+
+export function getAudioGainMultiplier(amount) {
+  const normalized = Math.max(0, Math.min(100, amount)) / 100;
+  return 1 + (normalized * 2);
+}
+
+export function getAudioGainExponent(amount) {
+  const normalized = Math.max(-100, Math.min(100, amount)) / 100;
+  return 1 + (normalized * 0.35);
+}

@@ -199,11 +199,15 @@ body {
 .audio-control-buttons,
 .audio-control-sliders {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0.46rem;
 }
 
+.audio-control-buttons {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 .audio-control-sliders {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   margin-top: 0.52rem;
 }
 
@@ -363,6 +367,14 @@ body {
     opacity 180ms ease,
     transform 180ms ease;
   z-index: 3;
+}
+
+.top-controls button {
+  width: 3.7rem;
+  min-width: 3.7rem;
+  padding: 0.56rem 0.6rem;
+  font-size: 0.52rem;
+  letter-spacing: 0.08em;
 }
 
 .controls-toggle {

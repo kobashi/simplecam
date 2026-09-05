@@ -1,4 +1,8 @@
-import { AudioAutomation } from "./audio-automation.mjs?v=1";
+import {
+  AudioAutomation,
+  getAudioGainExponent,
+  getAudioGainMultiplier,
+} from "./audio-automation.mjs?v=audio-gain-controls-1";
 
 const audioAutomation = new AudioAutomation();
 const video = document.getElementById("camera");
@@ -21,6 +25,8 @@ const audioThresholdSlider = document.getElementById("audioThresholdSlider");
 const audioReleaseSlider = document.getElementById("audioReleaseSlider");
 const audioOctaveSlider = document.getElementById("audioOctaveSlider");
 const audioPolyphonySlider = document.getElementById("audioPolyphonySlider");
+const audioGainSlider = document.getElementById("audioGainSlider");
+const audioCurveSlider = document.getElementById("audioCurveSlider");
 const contrastThresholdValue = document.getElementById("contrastThresholdValue");
 const trailDelayValue = document.getElementById("trailDelayValue");
 const trailAmountValue = document.getElementById("trailAmountValue");
@@ -28,6 +34,8 @@ const audioThresholdValue = document.getElementById("audioThresholdValue");
 const audioReleaseValue = document.getElementById("audioReleaseValue");
 const audioOctaveValue = document.getElementById("audioOctaveValue");
 const audioPolyphonyValue = document.getElementById("audioPolyphonyValue");
+const audioGainValue = document.getElementById("audioGainValue");
+const audioCurveValue = document.getElementById("audioCurveValue");
 const statusPanel = document.getElementById("statusPanel");
 const audioRegion = document.getElementById("audioRegion");
 const audioRegionHandles = [...audioRegion.querySelectorAll(".audio-region-handle")];
@@ -75,6 +83,8 @@ const state = {
   audioReleaseAmount: Number(audioReleaseSlider.value),
   audioOctaveAmount: Number(audioOctaveSlider.value),
   audioPolyphonyAmount: Number(audioPolyphonySlider.value),
+  audioGainAmount: Number(audioGainSlider.value),
+  audioCurveAmount: Number(audioCurveSlider.value),
   audioContext: null,
   audioMasterGain: null,
   audioDcFilter: null,
@@ -615,7 +625,9 @@ function updateAudioFromFrame(renderedAt = performance.now()) {
   }
 
   const now = state.audioContext.currentTime;
-  const masterGain = (frame.volume ** 1.35) * AUDIO_MAX_GAIN;
+  const gainExponent = getAudioGainExponent(state.audioCurveAmount);
+  const gainMultiplier = getAudioGainMultiplier(state.audioGainAmount);
+  const masterGain = (frame.volume ** gainExponent) * AUDIO_MAX_GAIN * gainMultiplier;
   const analysisDelta = getAudioAnalysisDelta(frame, state.lastAudioAnalysis);
   const triggerThreshold = clamp(state.audioThresholdAmount / 100, 0, 1);
   const shouldTriggerEnvelope = state.audioEnvelopeEnabled
@@ -1069,6 +1081,8 @@ function updateFilterAvailability() {
   audioReleaseSlider.disabled = !filtersAvailable;
   audioOctaveSlider.disabled = !filtersAvailable;
   audioPolyphonySlider.disabled = !filtersAvailable;
+  audioGainSlider.disabled = !filtersAvailable;
+  audioCurveSlider.disabled = !filtersAvailable;
 }
 
 function formatStrength(value) {
@@ -1083,6 +1097,8 @@ function updateTrailControls() {
   audioReleaseSlider.value = String(state.audioReleaseAmount);
   audioOctaveSlider.value = String(state.audioOctaveAmount);
   audioPolyphonySlider.value = String(state.audioPolyphonyAmount);
+  audioGainSlider.value = String(state.audioGainAmount);
+  audioCurveSlider.value = String(state.audioCurveAmount);
   contrastThresholdValue.textContent = formatStrength(state.contrastThresholdAmount);
   trailDelayValue.textContent = formatStrength(state.trailDelayAmount);
   trailAmountValue.textContent = formatStrength(state.trailAmount);
@@ -1092,6 +1108,10 @@ function updateTrailControls() {
     ? `+${state.audioOctaveAmount}`
     : formatStrength(state.audioOctaveAmount);
   audioPolyphonyValue.textContent = formatStrength(state.audioPolyphonyAmount);
+  audioGainValue.textContent = formatStrength(state.audioGainAmount);
+  audioCurveValue.textContent = state.audioCurveAmount > 0
+    ? `+${state.audioCurveAmount}`
+    : formatStrength(state.audioCurveAmount);
 }
 
 function shouldRenderFilteredPreview() {
@@ -1662,6 +1682,16 @@ function onAudioPolyphonySliderInput(event) {
   updateTrailControls();
 }
 
+function onAudioGainSliderInput(event) {
+  state.audioGainAmount = Number(event.currentTarget.value);
+  updateTrailControls();
+}
+
+function onAudioCurveSliderInput(event) {
+  state.audioCurveAmount = Number(event.currentTarget.value);
+  updateTrailControls();
+}
+
 function updateAudioRegionCorner(event) {
   const bounds = previewShell.getBoundingClientRect();
   if (!bounds.width || !bounds.height) {
@@ -1927,6 +1957,8 @@ audioThresholdSlider.addEventListener("input", onAudioThresholdSliderInput);
 audioReleaseSlider.addEventListener("input", onAudioReleaseSliderInput);
 audioOctaveSlider.addEventListener("input", onAudioOctaveSliderInput);
 audioPolyphonySlider.addEventListener("input", onAudioPolyphonySliderInput);
+audioGainSlider.addEventListener("input", onAudioGainSliderInput);
+audioCurveSlider.addEventListener("input", onAudioCurveSliderInput);
 
 updateFullscreenButton();
 updateViewportMetrics();

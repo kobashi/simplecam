@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { AudioAutomation } from "../audio-automation.mjs";
+import {
+  AudioAutomation,
+  getAudioGainExponent,
+  getAudioGainMultiplier,
+} from "../audio-automation.mjs";
 
 // Deliberately stale .value, like a browser read outside the render quantum.
 class Param {
@@ -97,4 +101,16 @@ test("native hold is used when available without reading stale .value", () => {
   automation.target(param, 0.2, 0.014, 0.045);
   assert.deepEqual(holds, [0, 0.014]);
   close(automation.valueAt(param, 0.014), 0.5);
+});
+
+test("gain control maps zero to current level and maximum to triple level", () => {
+  close(getAudioGainMultiplier(0), 1);
+  close(getAudioGainMultiplier(50), 2);
+  close(getAudioGainMultiplier(100), 3);
+});
+
+test("curve control maps minimum, center and maximum to the requested exponents", () => {
+  close(getAudioGainExponent(-100), 0.65);
+  close(getAudioGainExponent(0), 1);
+  close(getAudioGainExponent(100), 1.35);
 });
