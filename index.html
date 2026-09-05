@@ -7,7 +7,7 @@
       content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no"
     />
     <title>Camera Frame Preview</title>
-    <link rel="stylesheet" href="./styles.css?v=mirror-audio-region-1" />
+    <link rel="stylesheet" href="./styles.css?v=1.4.0" />
   </head>
   <body>
     <main class="app">
@@ -83,46 +83,99 @@
             />
             <span id="trailAmountValue" class="trail-slider-value">0</span>
           </label>
-          <label class="trail-slider">
-            <span class="trail-slider-label">THRESH</span>
-            <input
-              id="audioThresholdSlider"
-              class="trail-slider-input"
-              type="range"
-              min="0"
-              max="100"
-              step="1"
-              value="12"
-            />
-            <span id="audioThresholdValue" class="trail-slider-value">12</span>
-          </label>
-          <label class="trail-slider">
-            <span class="trail-slider-label">REL</span>
-            <input
-              id="audioReleaseSlider"
-              class="trail-slider-input"
-              type="range"
-              min="20"
-              max="2000"
-              step="10"
-              value="350"
-            />
-            <span id="audioReleaseValue" class="trail-slider-value">350</span>
-          </label>
-          <label class="trail-slider">
-            <span class="trail-slider-label">OCT</span>
-            <input
-              id="audioOctaveSlider"
-              class="trail-slider-input"
-              type="range"
-              min="-2"
-              max="2"
-              step="1"
-              value="0"
-            />
-            <span id="audioOctaveValue" class="trail-slider-value">0</span>
-          </label>
         </div>
+        <section id="audioControls" class="audio-controls is-hidden" aria-label="Audio controls">
+          <div class="audio-control-buttons">
+            <button
+              id="audioToggle"
+              class="audio-toggle"
+              type="button"
+              aria-label="Toggle synthesized audio"
+              aria-pressed="false"
+            >
+              SND OFF
+            </button>
+            <button
+              id="audioEnvelopeToggle"
+              class="audio-envelope-toggle"
+              type="button"
+              aria-label="Toggle audio envelope"
+              aria-pressed="false"
+            >
+              ENV OFF
+            </button>
+            <button
+              id="audioRgbToggle"
+              class="audio-option-toggle"
+              type="button"
+              aria-label="Rotate RGB octave mapping"
+            >
+              RGB BGR
+            </button>
+            <button
+              id="audioTimbreToggle"
+              class="audio-option-toggle"
+              type="button"
+              aria-label="Change synthesized timbre"
+            >
+              TONE FM
+            </button>
+          </div>
+          <div class="audio-control-sliders">
+            <label class="trail-slider">
+              <span class="trail-slider-label">THRESH</span>
+              <input
+                id="audioThresholdSlider"
+                class="trail-slider-input"
+                type="range"
+                min="0"
+                max="100"
+                step="1"
+                value="12"
+              />
+              <span id="audioThresholdValue" class="trail-slider-value">12</span>
+            </label>
+            <label class="trail-slider">
+              <span class="trail-slider-label">REL</span>
+              <input
+                id="audioReleaseSlider"
+                class="trail-slider-input"
+                type="range"
+                min="20"
+                max="2000"
+                step="10"
+                value="350"
+              />
+              <span id="audioReleaseValue" class="trail-slider-value">350</span>
+            </label>
+            <label class="trail-slider">
+              <span class="trail-slider-label">OCT</span>
+              <input
+                id="audioOctaveSlider"
+                class="trail-slider-input"
+                type="range"
+                min="-2"
+                max="2"
+                step="1"
+                value="0"
+              />
+              <span id="audioOctaveValue" class="trail-slider-value">0</span>
+            </label>
+            <label class="trail-slider">
+              <span class="trail-slider-label">POLY</span>
+              <input
+                id="audioPolyphonySlider"
+                class="trail-slider-input"
+                type="range"
+                min="1"
+                max="12"
+                step="1"
+                value="12"
+              />
+              <span id="audioPolyphonyValue" class="trail-slider-value">12</span>
+            </label>
+          </div>
+        </section>
         <button
           id="controlsToggle"
           class="controls-toggle"
@@ -134,22 +187,14 @@
         </button>
         <div class="top-controls">
           <button
-            id="audioToggle"
-            class="audio-toggle"
+            id="audioPanelToggle"
+            class="audio-panel-toggle"
             type="button"
-            aria-label="Toggle synthesized audio"
-            aria-pressed="false"
+            aria-label="Toggle audio controls"
+            aria-expanded="false"
+            aria-controls="audioControls"
           >
-            SND OFF
-          </button>
-          <button
-            id="audioEnvelopeToggle"
-            class="audio-envelope-toggle"
-            type="button"
-            aria-label="Toggle audio envelope"
-            aria-pressed="false"
-          >
-            ENV OFF
+            AUDIO
           </button>
           <button
             id="economyToggle"
@@ -191,6 +236,6 @@
       </section>
     </main>
 
-    <script type="module" src="./app.js?v=mirror-audio-region-1"></script>
+    <script type="module" src="./app.js?v=1.4.0"></script>
   </body>
 </html>

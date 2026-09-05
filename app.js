@@ -2,8 +2,12 @@ const video = document.getElementById("camera");
 const filteredPreview = document.getElementById("filteredPreview");
 const previewShell = document.querySelector(".preview-shell");
 const gestureSurface = document.getElementById("gestureSurface");
+const audioPanelToggle = document.getElementById("audioPanelToggle");
+const audioControls = document.getElementById("audioControls");
 const audioToggle = document.getElementById("audioToggle");
 const audioEnvelopeToggle = document.getElementById("audioEnvelopeToggle");
+const audioRgbToggle = document.getElementById("audioRgbToggle");
+const audioTimbreToggle = document.getElementById("audioTimbreToggle");
 const economyToggle = document.getElementById("economyToggle");
 const mirrorToggle = document.getElementById("mirrorToggle");
 const controlsToggle = document.getElementById("controlsToggle");
@@ -15,12 +19,14 @@ const trailAmountSlider = document.getElementById("trailAmountSlider");
 const audioThresholdSlider = document.getElementById("audioThresholdSlider");
 const audioReleaseSlider = document.getElementById("audioReleaseSlider");
 const audioOctaveSlider = document.getElementById("audioOctaveSlider");
+const audioPolyphonySlider = document.getElementById("audioPolyphonySlider");
 const contrastThresholdValue = document.getElementById("contrastThresholdValue");
 const trailDelayValue = document.getElementById("trailDelayValue");
 const trailAmountValue = document.getElementById("trailAmountValue");
 const audioThresholdValue = document.getElementById("audioThresholdValue");
 const audioReleaseValue = document.getElementById("audioReleaseValue");
 const audioOctaveValue = document.getElementById("audioOctaveValue");
+const audioPolyphonyValue = document.getElementById("audioPolyphonyValue");
 const statusPanel = document.getElementById("statusPanel");
 const audioRegion = document.getElementById("audioRegion");
 const audioRegionHandles = [...audioRegion.querySelectorAll(".audio-region-handle")];
@@ -55,6 +61,10 @@ const state = {
   isSwitchingCamera: false,
   audioEnabled: false,
   audioEnvelopeEnabled: false,
+  audioPanelVisible: false,
+  audioRgbRotationIndex: 0,
+  audioTimbreIndex: 2,
+  audioTimbreChangeToken: 0,
   economyMode: "normal",
   mirrorEnabled: false,
   performanceChangeToken: 0,
@@ -64,9 +74,13 @@ const state = {
   audioThresholdAmount: Number(audioThresholdSlider.value),
   audioReleaseAmount: Number(audioReleaseSlider.value),
   audioOctaveAmount: Number(audioOctaveSlider.value),
+  audioPolyphonyAmount: Number(audioPolyphonySlider.value),
   audioContext: null,
   audioMasterGain: null,
+  audioDcFilter: null,
+  audioSoftClipper: null,
   audioLimiter: null,
+  audioOutputGain: null,
   audioVoices: null,
   lastAudioAnalysis: null,
   lastAudioAnalysisAt: 0,
@@ -130,19 +144,30 @@ const PERFORMANCE_PROFILES = {
 };
 const AUDIO_ANALYSIS_WIDTH = 64;
 const AUDIO_ANALYSIS_HEIGHT = 36;
-const AUDIO_MAX_GAIN = 0.12;
-const AUDIO_FM_INDEX = 2.7;
-const AUDIO_ATTACK_TIME = 0.018;
+const AUDIO_MAX_GAIN = 0.1;
+const AUDIO_ATTACK_TIME = 0.028;
 const AUDIO_VOICE_MIX_GAIN = 1 / 3;
+const AUDIO_OUTPUT_GAIN = 0.78;
+const AUDIO_SOFT_CLIP_DRIVE = 1.45;
 const AUDIO_PITCH_SATURATION_THRESHOLD = 0.12;
 const AUDIO_REGION_MIN_SIZE = 0.12;
 const AUDIO_REGION_HANDLE_INSET_PX = 22;
 const AUDIO_NOTE_RATIOS = [1, 5 / 4, 3 / 2, 15 / 8];
 const AUDIO_BASE_C = 261.63;
 const AUDIO_PLANES = [
-  { key: "b", channel: 2, octaveOffset: -1 },
-  { key: "g", channel: 1, octaveOffset: 0 },
-  { key: "r", channel: 0, octaveOffset: 1 },
+  { key: "b", channel: 2 },
+  { key: "g", channel: 1 },
+  { key: "r", channel: 0 },
+];
+const AUDIO_RGB_ROTATIONS = [
+  { label: "BGR", octaveOffsets: { b: -1, g: 0, r: 1 } },
+  { label: "GRB", octaveOffsets: { g: -1, r: 0, b: 1 } },
+  { label: "RBG", octaveOffsets: { r: -1, b: 0, g: 1 } },
+];
+const AUDIO_TIMBRES = [
+  { label: "SIN", carrierType: "sine", modulatorType: "sine", fmIndex: 0, modulatorRatio: 1 },
+  { label: "TRI", carrierType: "triangle", modulatorType: "sine", fmIndex: 0.7, modulatorRatio: 1 },
+  { label: "FM", carrierType: "sine", modulatorType: "sine", fmIndex: 2.7, modulatorRatio: 2 },
 ];
 
 const audioAnalysisCanvas = document.createElement("canvas");
@@ -252,6 +277,16 @@ function updateAudioEnvelopeToggle() {
   audioEnvelopeToggle.textContent = state.audioEnvelopeEnabled ? "ENV ON" : "ENV OFF";
 }
 
+function updateAudioPanel() {
+  audioPanelToggle.setAttribute("aria-expanded", state.audioPanelVisible ? "true" : "false");
+  audioControls.classList.toggle("is-hidden", !state.audioPanelVisible);
+}
+
+function updateAudioOptionButtons() {
+  audioRgbToggle.textContent = `RGB ${getAudioRgbRotation().label}`;
+  audioTimbreToggle.textContent = `TONE ${getAudioTimbre().label}`;
+}
+
 function updateEconomyToggle() {
   const profile = getPerformanceProfile();
   economyToggle.dataset.mode = state.economyMode;
@@ -279,14 +314,36 @@ function updateControlsToggle() {
   controlsToggle.textContent = state.controlsVisible ? "UI ON" : "UI OFF";
 }
 
+function getAudioRgbRotation() {
+  return AUDIO_RGB_ROTATIONS[state.audioRgbRotationIndex];
+}
+
+function getAudioTimbre() {
+  return AUDIO_TIMBRES[state.audioTimbreIndex];
+}
+
+function createSoftClipCurve() {
+  const sampleCount = 1024;
+  const curve = new Float32Array(sampleCount);
+  const normalization = Math.tanh(AUDIO_SOFT_CLIP_DRIVE);
+
+  for (let index = 0; index < sampleCount; index += 1) {
+    const input = ((index / (sampleCount - 1)) * 2) - 1;
+    curve[index] = Math.tanh(input * AUDIO_SOFT_CLIP_DRIVE) / normalization;
+  }
+
+  return curve;
+}
+
 function createAudioVoice(audioContext) {
   const carrier = audioContext.createOscillator();
   const modulator = audioContext.createOscillator();
   const modulatorGain = audioContext.createGain();
   const voiceGain = audioContext.createGain();
 
-  carrier.type = "sine";
-  modulator.type = "sine";
+  const timbre = getAudioTimbre();
+  carrier.type = timbre.carrierType;
+  modulator.type = timbre.modulatorType;
   voiceGain.gain.value = 0;
   modulatorGain.gain.value = 0;
 
@@ -311,33 +368,47 @@ function ensureAudioGraph() {
 
   const audioContext = new AudioContextConstructor();
   const audioMasterGain = audioContext.createGain();
+  const audioDcFilter = audioContext.createBiquadFilter();
   const audioLimiter = audioContext.createDynamicsCompressor();
+  const audioSoftClipper = audioContext.createWaveShaper();
+  const audioOutputGain = audioContext.createGain();
   const audioVoices = AUDIO_PLANES.flatMap((plane) => (
     AUDIO_NOTE_RATIOS.map((noteRatio, noteIndex) => ({
       plane,
       noteIndex,
       noteRatio,
-      baseFrequency: AUDIO_BASE_C * noteRatio * (2 ** plane.octaveOffset),
       ...createAudioVoice(audioContext),
     }))
   ));
 
   audioMasterGain.gain.value = 0;
-  audioLimiter.threshold.value = -8;
-  audioLimiter.knee.value = 6;
-  audioLimiter.ratio.value = 16;
-  audioLimiter.attack.value = 0.003;
-  audioLimiter.release.value = 0.08;
+  audioDcFilter.type = "highpass";
+  audioDcFilter.frequency.value = 24;
+  audioDcFilter.Q.value = 0.7;
+  audioLimiter.threshold.value = -12;
+  audioLimiter.knee.value = 12;
+  audioLimiter.ratio.value = 12;
+  audioLimiter.attack.value = 0.008;
+  audioLimiter.release.value = 0.12;
+  audioSoftClipper.curve = createSoftClipCurve();
+  audioSoftClipper.oversample = "2x";
+  audioOutputGain.gain.value = AUDIO_OUTPUT_GAIN;
 
   audioVoices.forEach((voice) => {
     voice.voiceGain.connect(audioMasterGain);
   });
-  audioMasterGain.connect(audioLimiter);
-  audioLimiter.connect(audioContext.destination);
+  audioMasterGain.connect(audioDcFilter);
+  audioDcFilter.connect(audioLimiter);
+  audioLimiter.connect(audioSoftClipper);
+  audioSoftClipper.connect(audioOutputGain);
+  audioOutputGain.connect(audioContext.destination);
 
   state.audioContext = audioContext;
   state.audioMasterGain = audioMasterGain;
+  state.audioDcFilter = audioDcFilter;
+  state.audioSoftClipper = audioSoftClipper;
   state.audioLimiter = audioLimiter;
+  state.audioOutputGain = audioOutputGain;
   state.audioVoices = audioVoices;
 }
 
@@ -474,46 +545,68 @@ function holdAudioParamAtTime(audioParam, time) {
 }
 
 function getAudioVoiceFrequency(voice) {
-  return voice.baseFrequency * (2 ** state.audioOctaveAmount);
+  const octaveOffset = getAudioRgbRotation().octaveOffsets[voice.plane.key];
+  return AUDIO_BASE_C * voice.noteRatio * (2 ** (octaveOffset + state.audioOctaveAmount));
+}
+
+function limitAudioPolyphony(frame) {
+  const rankedNotes = frame.notes
+    .map((note, index) => ({
+      index,
+      score: note.active ? note.dominance * (0.25 + (note.intensity * 0.75)) : 0,
+    }))
+    .filter((note) => note.score > 0)
+    .sort((a, b) => b.score - a.score);
+  const activeIndexes = new Set(
+    rankedNotes.slice(0, state.audioPolyphonyAmount).map((note) => note.index),
+  );
+
+  return {
+    ...frame,
+    notes: frame.notes.map((note, index) => ({
+      ...note,
+      active: note.active && activeIndexes.has(index),
+    })),
+  };
 }
 
 function applyContinuousAudio(frame, now, masterGain) {
+  const timbre = getAudioTimbre();
   state.audioMasterGain.gain.setTargetAtTime(masterGain, now, 0.035);
 
   state.audioVoices.forEach((voice, index) => {
     const note = frame.notes[index];
     const intensity = note.active ? note.intensity : 0;
     const dominance = note.active ? note.dominance : 0;
-    const fmDepth = frame.saturation * dominance * AUDIO_FM_INDEX;
+    const fmDepth = frame.saturation * dominance * timbre.fmIndex;
     const voiceGain = note.active ? ((0.12 + (intensity * 0.88)) * dominance * AUDIO_VOICE_MIX_GAIN) : 0;
     const frequency = getAudioVoiceFrequency(voice);
 
     holdAudioParamAtTime(voice.modulatorGain.gain, now);
     holdAudioParamAtTime(voice.voiceGain.gain, now);
     voice.carrier.frequency.setTargetAtTime(frequency, now, 0.045);
-    voice.modulator.frequency.setTargetAtTime(frequency * 2, now, 0.045);
+    voice.modulator.frequency.setTargetAtTime(frequency * timbre.modulatorRatio, now, 0.045);
     voice.modulatorGain.gain.setTargetAtTime(frequency * fmDepth, now, 0.045);
     voice.voiceGain.gain.setTargetAtTime(voiceGain, now, 0.045);
   });
 }
 
-function triggerEnvelopeAudio(frame, now, masterGain) {
+function triggerEnvelopeAudio(frame, now) {
   const releaseTime = clamp(state.audioReleaseAmount / 1000, 0.02, 2);
-
-  state.audioMasterGain.gain.setTargetAtTime(masterGain, now, 0.012);
+  const timbre = getAudioTimbre();
 
   state.audioVoices.forEach((voice, index) => {
     const note = frame.notes[index];
     const intensity = note.active ? note.intensity : 0;
     const dominance = note.active ? note.dominance : 0;
-    const fmDepth = frame.saturation * dominance * AUDIO_FM_INDEX;
+    const fmDepth = frame.saturation * dominance * timbre.fmIndex;
     const peakGain = note.active ? ((0.12 + (intensity * 0.88)) * dominance * AUDIO_VOICE_MIX_GAIN) : 0;
     const attackEnd = now + AUDIO_ATTACK_TIME;
     const releaseEnd = attackEnd + releaseTime;
     const frequency = getAudioVoiceFrequency(voice);
 
     voice.carrier.frequency.setValueAtTime(frequency, now);
-    voice.modulator.frequency.setValueAtTime(frequency * 2, now);
+    voice.modulator.frequency.setValueAtTime(frequency * timbre.modulatorRatio, now);
     holdAudioParamAtTime(voice.modulatorGain.gain, now);
     voice.modulatorGain.gain.setTargetAtTime(frequency * fmDepth, now, 0.01);
 
@@ -543,14 +636,15 @@ function updateAudioFromFrame(renderedAt = performance.now()) {
   const analysisDelta = getAudioAnalysisDelta(frame, state.lastAudioAnalysis);
   const triggerThreshold = clamp(state.audioThresholdAmount / 100, 0, 1);
   const shouldTriggerEnvelope = state.audioEnvelopeEnabled && analysisDelta >= triggerThreshold;
+  const voicedFrame = limitAudioPolyphony(frame);
 
   if (state.audioEnvelopeEnabled) {
-    state.audioMasterGain.gain.setTargetAtTime(masterGain, now, 0.035);
+    state.audioMasterGain.gain.setTargetAtTime(masterGain, now, 0.05);
     if (shouldTriggerEnvelope) {
-      triggerEnvelopeAudio(frame, now, masterGain);
+      triggerEnvelopeAudio(voicedFrame, now);
     }
   } else {
-    applyContinuousAudio(frame, now, masterGain);
+    applyContinuousAudio(voicedFrame, now, masterGain);
   }
 
   state.lastAudioAnalysis = frame;
@@ -567,22 +661,30 @@ function updateAudioFromFrame(renderedAt = performance.now()) {
 }
 
 async function toggleAudio() {
+  audioToggle.disabled = true;
+
   try {
     if (state.audioEnabled) {
       state.audioEnabled = false;
       state.lastAudioAnalysis = null;
       state.lastAudioAnalysisAt = 0;
+      state.audioTimbreChangeToken += 1;
+      updateAudioToggle();
 
       const now = state.audioContext.currentTime;
-      state.audioMasterGain.gain.cancelScheduledValues(now);
-      state.audioMasterGain.gain.setValueAtTime(0, now);
+      holdAudioParamAtTime(state.audioMasterGain.gain, now);
+      state.audioMasterGain.gain.linearRampToValueAtTime(0, now + 0.025);
+      await new Promise((resolve) => window.setTimeout(resolve, 30));
+
+      const silentAt = state.audioContext.currentTime;
+      state.audioMasterGain.gain.cancelScheduledValues(silentAt);
+      state.audioMasterGain.gain.setValueAtTime(0, silentAt);
       state.audioVoices.forEach((voice) => {
-        voice.voiceGain.gain.cancelScheduledValues(now);
-        voice.voiceGain.gain.setValueAtTime(0, now);
-        voice.modulatorGain.gain.cancelScheduledValues(now);
-        voice.modulatorGain.gain.setValueAtTime(0, now);
+        voice.voiceGain.gain.cancelScheduledValues(silentAt);
+        voice.voiceGain.gain.setValueAtTime(0, silentAt);
+        voice.modulatorGain.gain.cancelScheduledValues(silentAt);
+        voice.modulatorGain.gain.setValueAtTime(0, silentAt);
       });
-      updateAudioToggle();
       try {
         await state.audioContext.suspend();
       } catch (error) {
@@ -592,6 +694,11 @@ async function toggleAudio() {
     }
 
     ensureAudioGraph();
+    state.audioTimbreChangeToken += 1;
+    applyAudioTimbreToVoices();
+    const now = state.audioContext.currentTime;
+    state.audioOutputGain.gain.cancelScheduledValues(now);
+    state.audioOutputGain.gain.setValueAtTime(AUDIO_OUTPUT_GAIN, now);
     await state.audioContext.resume();
     state.audioEnabled = true;
     state.lastAudioAnalysis = null;
@@ -602,6 +709,8 @@ async function toggleAudio() {
     state.audioEnabled = false;
     updateAudioToggle();
     setStatus("音響処理を開始できませんでした。");
+  } finally {
+    audioToggle.disabled = false;
   }
 }
 
@@ -609,6 +718,58 @@ function toggleAudioEnvelope() {
   state.audioEnvelopeEnabled = !state.audioEnvelopeEnabled;
   state.lastAudioAnalysis = null;
   updateAudioEnvelopeToggle();
+}
+
+function toggleAudioPanel() {
+  state.audioPanelVisible = !state.audioPanelVisible;
+  updateAudioPanel();
+}
+
+function rotateAudioRgbMapping() {
+  state.audioRgbRotationIndex = (state.audioRgbRotationIndex + 1) % AUDIO_RGB_ROTATIONS.length;
+  state.lastAudioAnalysis = null;
+  updateAudioOptionButtons();
+}
+
+function applyAudioTimbreToVoices() {
+  if (!state.audioVoices) {
+    return;
+  }
+
+  const timbre = getAudioTimbre();
+  state.audioVoices.forEach((voice) => {
+    voice.carrier.type = timbre.carrierType;
+    voice.modulator.type = timbre.modulatorType;
+  });
+}
+
+function cycleAudioTimbre() {
+  state.audioTimbreIndex = (state.audioTimbreIndex + 1) % AUDIO_TIMBRES.length;
+  state.audioTimbreChangeToken += 1;
+  const changeToken = state.audioTimbreChangeToken;
+  state.lastAudioAnalysis = null;
+  updateAudioOptionButtons();
+
+  if (!state.audioContext || state.audioContext.state !== "running" || !state.audioOutputGain) {
+    applyAudioTimbreToVoices();
+    return;
+  }
+
+  const now = state.audioContext.currentTime;
+  holdAudioParamAtTime(state.audioOutputGain.gain, now);
+  state.audioOutputGain.gain.linearRampToValueAtTime(0, now + 0.025);
+
+  window.setTimeout(() => {
+    if (changeToken !== state.audioTimbreChangeToken || !state.audioOutputGain) {
+      return;
+    }
+
+    applyAudioTimbreToVoices();
+    const resumeAt = state.audioContext.currentTime;
+    state.audioOutputGain.gain.cancelScheduledValues(resumeAt);
+    state.audioOutputGain.gain.setValueAtTime(0, resumeAt);
+    state.audioOutputGain.gain.linearRampToValueAtTime(AUDIO_OUTPUT_GAIN, resumeAt + 0.035);
+  }, 30);
 }
 
 function getPerformanceProfile() {
@@ -930,6 +1091,7 @@ function updateFilterAvailability() {
   audioThresholdSlider.disabled = !filtersAvailable;
   audioReleaseSlider.disabled = !filtersAvailable;
   audioOctaveSlider.disabled = !filtersAvailable;
+  audioPolyphonySlider.disabled = !filtersAvailable;
 }
 
 function formatStrength(value) {
@@ -943,6 +1105,7 @@ function updateTrailControls() {
   audioThresholdSlider.value = String(state.audioThresholdAmount);
   audioReleaseSlider.value = String(state.audioReleaseAmount);
   audioOctaveSlider.value = String(state.audioOctaveAmount);
+  audioPolyphonySlider.value = String(state.audioPolyphonyAmount);
   contrastThresholdValue.textContent = formatStrength(state.contrastThresholdAmount);
   trailDelayValue.textContent = formatStrength(state.trailDelayAmount);
   trailAmountValue.textContent = formatStrength(state.trailAmount);
@@ -951,6 +1114,7 @@ function updateTrailControls() {
   audioOctaveValue.textContent = state.audioOctaveAmount > 0
     ? `+${state.audioOctaveAmount}`
     : formatStrength(state.audioOctaveAmount);
+  audioPolyphonyValue.textContent = formatStrength(state.audioPolyphonyAmount);
 }
 
 function shouldRenderFilteredPreview() {
@@ -1516,6 +1680,11 @@ function onAudioOctaveSliderInput(event) {
   updateTrailControls();
 }
 
+function onAudioPolyphonySliderInput(event) {
+  state.audioPolyphonyAmount = Number(event.currentTarget.value);
+  updateTrailControls();
+}
+
 function updateAudioRegionCorner(event) {
   const bounds = previewShell.getBoundingClientRect();
   if (!bounds.width || !bounds.height) {
@@ -1765,6 +1934,9 @@ document.addEventListener("fullscreenchange", onFullscreenChange);
 document.addEventListener("visibilitychange", onVisibilityChange);
 audioToggle.addEventListener("click", toggleAudio);
 audioEnvelopeToggle.addEventListener("click", toggleAudioEnvelope);
+audioPanelToggle.addEventListener("click", toggleAudioPanel);
+audioRgbToggle.addEventListener("click", rotateAudioRgbMapping);
+audioTimbreToggle.addEventListener("click", cycleAudioTimbre);
 economyToggle.addEventListener("click", toggleEconomy);
 mirrorToggle.addEventListener("click", toggleMirror);
 controlsToggle.addEventListener("click", toggleControlsVisibility);
@@ -1776,11 +1948,14 @@ trailAmountSlider.addEventListener("input", onTrailAmountSliderInput);
 audioThresholdSlider.addEventListener("input", onAudioThresholdSliderInput);
 audioReleaseSlider.addEventListener("input", onAudioReleaseSliderInput);
 audioOctaveSlider.addEventListener("input", onAudioOctaveSliderInput);
+audioPolyphonySlider.addEventListener("input", onAudioPolyphonySliderInput);
 
 updateFullscreenButton();
 updateViewportMetrics();
 updateAudioToggle();
 updateAudioEnvelopeToggle();
+updateAudioPanel();
+updateAudioOptionButtons();
 updateEconomyToggle();
 updateMirrorToggle();
 updateAudioRegion();
