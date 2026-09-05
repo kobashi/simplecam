@@ -5,6 +5,7 @@ const gestureSurface = document.getElementById("gestureSurface");
 const audioToggle = document.getElementById("audioToggle");
 const audioEnvelopeToggle = document.getElementById("audioEnvelopeToggle");
 const economyToggle = document.getElementById("economyToggle");
+const mirrorToggle = document.getElementById("mirrorToggle");
 const controlsToggle = document.getElementById("controlsToggle");
 const cameraToggle = document.getElementById("cameraToggle");
 const fullscreenToggle = document.getElementById("fullscreenToggle");
@@ -21,6 +22,8 @@ const audioThresholdValue = document.getElementById("audioThresholdValue");
 const audioReleaseValue = document.getElementById("audioReleaseValue");
 const audioOctaveValue = document.getElementById("audioOctaveValue");
 const statusPanel = document.getElementById("statusPanel");
+const audioRegion = document.getElementById("audioRegion");
+const audioRegionHandles = [...audioRegion.querySelectorAll(".audio-region-handle")];
 
 const gl = filteredPreview.getContext("webgl", {
   alpha: false,
@@ -53,6 +56,7 @@ const state = {
   audioEnabled: false,
   audioEnvelopeEnabled: false,
   economyMode: "normal",
+  mirrorEnabled: false,
   performanceChangeToken: 0,
   pageVisible: !document.hidden,
   visibilityChangeToken: 0,
@@ -66,6 +70,14 @@ const state = {
   audioVoices: null,
   lastAudioAnalysis: null,
   lastAudioAnalysisAt: 0,
+  audioRegion: {
+    left: 0.2,
+    top: 0.2,
+    right: 0.8,
+    bottom: 0.8,
+    activeCorner: null,
+    activePointerId: null,
+  },
 };
 
 const gesture = {
@@ -123,6 +135,8 @@ const AUDIO_FM_INDEX = 2.7;
 const AUDIO_ATTACK_TIME = 0.018;
 const AUDIO_VOICE_MIX_GAIN = 1 / 3;
 const AUDIO_PITCH_SATURATION_THRESHOLD = 0.12;
+const AUDIO_REGION_MIN_SIZE = 0.12;
+const AUDIO_REGION_HANDLE_INSET_PX = 22;
 const AUDIO_NOTE_RATIOS = [1, 5 / 4, 3 / 2, 15 / 8];
 const AUDIO_BASE_C = 261.63;
 const AUDIO_PLANES = [
@@ -246,6 +260,19 @@ function updateEconomyToggle() {
   economyToggle.textContent = profile.label;
 }
 
+function updateMirrorToggle() {
+  mirrorToggle.setAttribute("aria-pressed", state.mirrorEnabled ? "true" : "false");
+  mirrorToggle.textContent = state.mirrorEnabled ? "MIR ON" : "MIR OFF";
+}
+
+function updateAudioRegion() {
+  const { left, top, right, bottom } = state.audioRegion;
+  audioRegion.style.left = `${left * 100}%`;
+  audioRegion.style.top = `${top * 100}%`;
+  audioRegion.style.width = `${(right - left) * 100}%`;
+  audioRegion.style.height = `${(bottom - top) * 100}%`;
+}
+
 function updateControlsToggle() {
   document.body.classList.toggle("controls-hidden", !state.controlsVisible);
   controlsToggle.setAttribute("aria-pressed", state.controlsVisible ? "true" : "false");
@@ -318,12 +345,52 @@ function getAudioNoteIndex(value) {
   return Math.min(3, Math.floor(clamp(value / 255, 0, 1) * 4));
 }
 
+function getAudioAnalysisSourceRect() {
+  const shellWidth = previewShell.clientWidth || window.innerWidth;
+  const shellHeight = previewShell.clientHeight || window.innerHeight;
+  const mirrorDirection = state.mirrorEnabled ? -1 : 1;
+  const mapScreenXToCanvas = (screenX) => (
+    0.5 + (mirrorDirection * (((screenX - 0.5) - (state.panX / shellWidth)) / state.zoom))
+  );
+  const mapScreenYToCanvas = (screenY) => (
+    0.5 + (((screenY - 0.5) - (state.panY / shellHeight)) / state.zoom)
+  );
+  const mappedLeft = mapScreenXToCanvas(state.audioRegion.left);
+  const mappedRight = mapScreenXToCanvas(state.audioRegion.right);
+  const sourceLeft = clamp(Math.min(mappedLeft, mappedRight), 0, 1);
+  const sourceRight = clamp(Math.max(mappedLeft, mappedRight), 0, 1);
+  const sourceTop = clamp(mapScreenYToCanvas(state.audioRegion.top), 0, 1);
+  const sourceBottom = clamp(mapScreenYToCanvas(state.audioRegion.bottom), 0, 1);
+  const sourceX = clamp(sourceLeft * filteredPreview.width, 0, filteredPreview.width - 1);
+  const sourceY = clamp(sourceTop * filteredPreview.height, 0, filteredPreview.height - 1);
+  const sourceRightPx = clamp(sourceRight * filteredPreview.width, sourceX + 1, filteredPreview.width);
+  const sourceBottomPx = clamp(sourceBottom * filteredPreview.height, sourceY + 1, filteredPreview.height);
+
+  return {
+    x: sourceX,
+    y: sourceY,
+    width: sourceRightPx - sourceX,
+    height: sourceBottomPx - sourceY,
+  };
+}
+
 function analyzeAudioFrame() {
   if (!audioAnalysisContext || filteredPreview.width <= 0 || filteredPreview.height <= 0) {
     return null;
   }
 
-  audioAnalysisContext.drawImage(filteredPreview, 0, 0, AUDIO_ANALYSIS_WIDTH, AUDIO_ANALYSIS_HEIGHT);
+  const source = getAudioAnalysisSourceRect();
+  audioAnalysisContext.drawImage(
+    filteredPreview,
+    source.x,
+    source.y,
+    source.width,
+    source.height,
+    0,
+    0,
+    AUDIO_ANALYSIS_WIDTH,
+    AUDIO_ANALYSIS_HEIGHT,
+  );
   const { data } = audioAnalysisContext.getImageData(0, 0, AUDIO_ANALYSIS_WIDTH, AUDIO_ANALYSIS_HEIGHT);
   let maxBrightness = 0;
   let saturationSum = 0;
@@ -582,6 +649,13 @@ async function toggleEconomy() {
   if (changeToken !== state.performanceChangeToken) {
     await applyCameraPerformanceConstraints();
   }
+}
+
+function toggleMirror() {
+  state.mirrorEnabled = !state.mirrorEnabled;
+  state.lastAudioAnalysis = null;
+  updateMirrorToggle();
+  applyPreviewTransform();
 }
 
 function toggleControlsVisibility() {
@@ -1107,7 +1181,8 @@ function getPanBounds() {
 }
 
 function applyPreviewTransform() {
-  const transform = `translate3d(${state.panX}px, ${state.panY}px, 0) scale(${state.zoom})`;
+  const mirrorScale = state.mirrorEnabled ? -1 : 1;
+  const transform = `translate3d(${state.panX}px, ${state.panY}px, 0) scale(${state.zoom}) scaleX(${mirrorScale})`;
   video.style.objectPosition = "center center";
   video.style.transform = transform;
   filteredPreview.style.transform = transform;
@@ -1441,6 +1516,59 @@ function onAudioOctaveSliderInput(event) {
   updateTrailControls();
 }
 
+function updateAudioRegionCorner(event) {
+  const bounds = previewShell.getBoundingClientRect();
+  if (!bounds.width || !bounds.height) {
+    return;
+  }
+
+  const insetX = Math.min(0.1, AUDIO_REGION_HANDLE_INSET_PX / bounds.width);
+  const insetY = Math.min(0.1, AUDIO_REGION_HANDLE_INSET_PX / bounds.height);
+  const normalizedX = clamp((event.clientX - bounds.left) / bounds.width, insetX, 1 - insetX);
+  const normalizedY = clamp((event.clientY - bounds.top) / bounds.height, insetY, 1 - insetY);
+
+  if (state.audioRegion.activeCorner === "top-left") {
+    state.audioRegion.left = Math.min(normalizedX, state.audioRegion.right - AUDIO_REGION_MIN_SIZE);
+    state.audioRegion.top = Math.min(normalizedY, state.audioRegion.bottom - AUDIO_REGION_MIN_SIZE);
+  } else if (state.audioRegion.activeCorner === "bottom-right") {
+    state.audioRegion.right = Math.max(normalizedX, state.audioRegion.left + AUDIO_REGION_MIN_SIZE);
+    state.audioRegion.bottom = Math.max(normalizedY, state.audioRegion.top + AUDIO_REGION_MIN_SIZE);
+  }
+
+  updateAudioRegion();
+}
+
+function onAudioRegionPointerDown(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  state.audioRegion.activeCorner = event.currentTarget.dataset.corner;
+  state.audioRegion.activePointerId = event.pointerId;
+  event.currentTarget.setPointerCapture?.(event.pointerId);
+  updateAudioRegionCorner(event);
+}
+
+function onAudioRegionPointerMove(event) {
+  if (event.pointerId !== state.audioRegion.activePointerId) {
+    return;
+  }
+
+  event.preventDefault();
+  event.stopPropagation();
+  updateAudioRegionCorner(event);
+}
+
+function onAudioRegionPointerEnd(event) {
+  if (event.pointerId !== state.audioRegion.activePointerId) {
+    return;
+  }
+
+  event.preventDefault();
+  event.stopPropagation();
+  event.currentTarget.releasePointerCapture?.(event.pointerId);
+  state.audioRegion.activeCorner = null;
+  state.audioRegion.activePointerId = null;
+}
+
 function getPointDistance(points) {
   const [a, b] = points;
   return Math.hypot(b.clientX - a.clientX, b.clientY - a.clientY);
@@ -1623,6 +1751,13 @@ if (prefersTouchInput) {
   window.addEventListener("pointercancel", onPointerUpOrCancel, { passive: true });
 }
 
+audioRegionHandles.forEach((handle) => {
+  handle.addEventListener("pointerdown", onAudioRegionPointerDown);
+  handle.addEventListener("pointermove", onAudioRegionPointerMove);
+  handle.addEventListener("pointerup", onAudioRegionPointerEnd);
+  handle.addEventListener("pointercancel", onAudioRegionPointerEnd);
+});
+
 window.addEventListener("resize", refreshViewportLayout);
 window.visualViewport?.addEventListener("resize", refreshViewportLayout);
 window.visualViewport?.addEventListener("scroll", refreshViewportLayout);
@@ -1631,6 +1766,7 @@ document.addEventListener("visibilitychange", onVisibilityChange);
 audioToggle.addEventListener("click", toggleAudio);
 audioEnvelopeToggle.addEventListener("click", toggleAudioEnvelope);
 economyToggle.addEventListener("click", toggleEconomy);
+mirrorToggle.addEventListener("click", toggleMirror);
 controlsToggle.addEventListener("click", toggleControlsVisibility);
 cameraToggle.addEventListener("click", toggleCamera);
 fullscreenToggle.addEventListener("click", toggleFullscreen);
@@ -1646,6 +1782,8 @@ updateViewportMetrics();
 updateAudioToggle();
 updateAudioEnvelopeToggle();
 updateEconomyToggle();
+updateMirrorToggle();
+updateAudioRegion();
 updateControlsToggle();
 updateCameraToggle();
 updateFilterAvailability();

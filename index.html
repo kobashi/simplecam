@@ -7,7 +7,7 @@
       content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no"
     />
     <title>Camera Frame Preview</title>
-    <link rel="stylesheet" href="./styles.css?v=economy-modes-1" />
+    <link rel="stylesheet" href="./styles.css?v=mirror-audio-region-1" />
   </head>
   <body>
     <main class="app">
@@ -28,6 +28,20 @@
           ></canvas>
           <div class="preview-vignette" aria-hidden="true"></div>
           <div id="gestureSurface" class="gesture-surface" aria-hidden="true"></div>
+          <div id="audioRegion" class="audio-region" aria-label="Audio trigger region">
+            <button
+              class="audio-region-handle audio-region-handle-top-left"
+              type="button"
+              data-corner="top-left"
+              aria-label="Move audio region top-left corner"
+            ></button>
+            <button
+              class="audio-region-handle audio-region-handle-bottom-right"
+              type="button"
+              data-corner="bottom-right"
+              aria-label="Move audio region bottom-right corner"
+            ></button>
+          </div>
         </div>
         <div class="trail-controls" aria-label="filter controls">
           <label class="trail-slider">
@@ -148,6 +162,15 @@
             ECO OFF
           </button>
           <button
+            id="mirrorToggle"
+            class="mirror-toggle"
+            type="button"
+            aria-label="Toggle mirror mode"
+            aria-pressed="false"
+          >
+            MIR OFF
+          </button>
+          <button
             id="cameraToggle"
             class="camera-toggle is-hidden"
             type="button"
@@ -168,6 +191,6 @@
       </section>
     </main>
 
-    <script type="module" src="./app.js?v=economy-modes-1"></script>
+    <script type="module" src="./app.js?v=mirror-audio-region-1"></script>
   </body>
 </html>
