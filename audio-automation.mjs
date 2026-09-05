@@ -66,7 +66,7 @@ export class AudioAutomation {
 
 export function getAudioGainMultiplier(amount) {
   const normalized = Math.max(0, Math.min(100, amount)) / 100;
-  return 1 + (normalized * 2);
+  return 1 + (normalized * 5);
 }
 
 export function getAudioGainExponent(amount) {

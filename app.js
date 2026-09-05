@@ -2,7 +2,7 @@ import {
   AudioAutomation,
   getAudioGainExponent,
   getAudioGainMultiplier,
-} from "./audio-automation.mjs?v=audio-gain-controls-1";
+} from "./audio-automation.mjs?v=audio-compressor-1";
 
 const audioAutomation = new AudioAutomation();
 const video = document.getElementById("camera");
@@ -392,13 +392,13 @@ function ensureAudioGraph() {
   audioDcFilter.type = "highpass";
   audioDcFilter.frequency.value = 24;
   audioDcFilter.Q.value = 0.7;
-  audioLimiter.threshold.value = -12;
-  audioLimiter.knee.value = 12;
-  audioLimiter.ratio.value = 12;
-  audioLimiter.attack.value = 0.008;
-  audioLimiter.release.value = 0.12;
+  audioLimiter.threshold.value = -14;
+  audioLimiter.knee.value = 18;
+  audioLimiter.ratio.value = 10;
+  audioLimiter.attack.value = 0.004;
+  audioLimiter.release.value = 0.16;
   audioSoftClipper.curve = createSoftClipCurve();
-  audioSoftClipper.oversample = "2x";
+  audioSoftClipper.oversample = "none";
   audioOutputGain.gain.value = AUDIO_OUTPUT_GAIN;
 
   audioVoices.forEach((voice) => {

@@ -103,10 +103,10 @@ test("native hold is used when available without reading stale .value", () => {
   close(automation.valueAt(param, 0.014), 0.5);
 });
 
-test("gain control maps zero to current level and maximum to triple level", () => {
+test("gain control maps zero to current level and maximum to six times the level", () => {
   close(getAudioGainMultiplier(0), 1);
-  close(getAudioGainMultiplier(50), 2);
-  close(getAudioGainMultiplier(100), 3);
+  close(getAudioGainMultiplier(50), 3.5);
+  close(getAudioGainMultiplier(100), 6);
 });
 
 test("curve control maps minimum, center and maximum to the requested exponents", () => {
