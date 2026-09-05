@@ -109,7 +109,8 @@ body {
   box-shadow: 0 0 0 1px rgba(12, 12, 12, 0.24);
   pointer-events: none;
   transition: opacity 180ms ease;
-  z-index: 3;
+  /* Keep corner handles reachable when the region meets another control. */
+  z-index: 5;
 }
 
 .audio-region-handle {
@@ -122,6 +123,7 @@ body {
   background: transparent;
   touch-action: none;
   pointer-events: auto;
+  cursor: nwse-resize;
 }
 
 .audio-region-handle::before {
@@ -137,6 +139,12 @@ body {
 .audio-region-handle:focus-visible::before {
   outline: 2px solid rgba(255, 255, 255, 0.8);
   outline-offset: 2px;
+}
+
+.audio-region-handle.is-active::before {
+  border-color: rgba(255, 255, 255, 0.9);
+  background: rgba(82, 82, 82, 0.72);
+  transform: scale(1.18);
 }
 
 .audio-region-handle-top-left {

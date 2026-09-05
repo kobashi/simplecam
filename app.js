@@ -1712,6 +1712,7 @@ function onAudioRegionPointerDown(event) {
   event.stopPropagation();
   state.audioRegion.activeCorner = event.currentTarget.dataset.corner;
   state.audioRegion.activePointerId = event.pointerId;
+  event.currentTarget.classList.add("is-active");
   event.currentTarget.setPointerCapture?.(event.pointerId);
   updateAudioRegionCorner(event);
 }
@@ -1733,6 +1734,7 @@ function onAudioRegionPointerEnd(event) {
 
   event.preventDefault();
   event.stopPropagation();
+  event.currentTarget.classList.remove("is-active");
   event.currentTarget.releasePointerCapture?.(event.pointerId);
   state.audioRegion.activeCorner = null;
   state.audioRegion.activePointerId = null;
