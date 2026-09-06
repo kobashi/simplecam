@@ -5,6 +5,7 @@ import {
   getAudioFmDepth,
   getAudioGainMultiplier,
   getAudioShiftedSaturation,
+  limitAudioFmDepth,
   limitAudioPolyphony,
 } from "../audio-automation.mjs";
 
@@ -114,6 +115,14 @@ test("gain control maps zero to current level and maximum to ten times the level
 test("FM dominance curve remains audible for small image regions", () => {
   close(getAudioFmDepth(0.8, 0.04, 4, 0.5), 0.64);
   close(getAudioFmDepth(0.8, 0.04, 0, 1), 0);
+});
+
+test("FM depth is limited only when significant sidebands approach Nyquist", () => {
+  const limited = limitAudioFmDepth(3.5, 3924.45, 3, 48000);
+  assert.ok(limited < 3.5);
+  close(3924.45 * (1 + 3 + limited), 48000 * 0.45);
+  close(limitAudioFmDepth(3.5, 261.63, 3, 48000), 3.5);
+  close(limitAudioFmDepth(3.5, 3924.45, 3, Number.NaN), limited);
 });
 
 test("polyphony limiter enforces every setting from 1 through 12", () => {

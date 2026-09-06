@@ -13,17 +13,19 @@ function harness() {
   const triggers = [];
   const state = {
     audioEnabled: true, audioEnvelopeEnabled: true,
-    audioContext: { currentTime: 0 }, audioVoices: [], audioMasterGain: { gain: {} },
+    audioContext: { currentTime: 0, sampleRate: 48000 }, audioVoices: [], audioMasterGain: { gain: {} },
     audioThresholdAmount: 0, lastAudioAnalysis: null, lastAudioAnalysisAt: 0,
     nextAudioTriggerAt: 0, audioGainAmount: 0,
   };
   const context = vm.createContext({
     state, AUDIO_MAX_GAIN: 0.1, AUDIO_TRIGGER_INTERVAL: 0.08,
     getAudioGainMultiplier: () => 1,
+    getAudioScheduleTime: () => state.audioContext.currentTime,
     AUDIO_GAIN_EXPONENT: 1.35,
     clamp: (n, min, max) => Math.max(min, Math.min(max, n)),
     getPerformanceProfile: () => ({ audioAnalysisIntervalMs: 0 }),
-    analyzeAudioFrame: () => ({ volume: 1 }),
+    active: true,
+    analyzeAudioFrame: () => ({ volume: 1, notes: [{ active: context.active }] }),
     delta: 1,
     getAudioAnalysisDelta: () => context.delta,
     limitAudioPolyphony: (frame) => frame,
@@ -67,4 +69,13 @@ test("threshold and envelope OFF are respected", () => {
   state.audioEnvelopeEnabled = false;
   frame(0.2);
   assert.deepEqual(triggers, [0.1]);
+});
+
+test("a frame without active notes does not cut a running envelope", () => {
+  const { frame, context, triggers } = harness();
+  frame(0);
+  context.active = false;
+  context.delta = 1;
+  frame(0.1);
+  assert.deepEqual(triggers, [0]);
 });

@@ -1,0 +1,377 @@
+:root {
+  color-scheme: dark;
+  --ink: #e8e5dc;
+  --muted: #aaa89f;
+  --line: rgba(232, 229, 220, 0.16);
+  --panel: rgba(37, 37, 32, 0.76);
+  --accent: #d5a85a;
+  --page: #11110e;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-width: 18rem;
+  background:
+    radial-gradient(circle at 12% 8%, rgba(213, 168, 90, 0.14), transparent 28rem),
+    linear-gradient(145deg, #191914 0%, var(--page) 48%, #0b0b09 100%);
+  color: var(--ink);
+  font-family: "Avenir Next", "Hiragino Sans", sans-serif;
+  line-height: 1.7;
+}
+
+a {
+  color: inherit;
+}
+
+.manual-hero,
+.manual-main,
+.manual-footer {
+  width: min(100% - 2rem, 68rem);
+  margin-inline: auto;
+}
+
+.manual-hero {
+  min-height: 34rem;
+  padding: max(1rem, env(safe-area-inset-top)) 0 3rem;
+  display: grid;
+  align-content: space-between;
+  border-bottom: 1px solid var(--line);
+}
+
+.manual-nav,
+.manual-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.manual-mark,
+.eyebrow,
+.section-number,
+.effect-top span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+}
+
+.back-link,
+.manual-footer a {
+  padding: 0.55rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  text-decoration: none;
+  font-size: 0.78rem;
+}
+
+.hero-copy {
+  max-width: 47rem;
+  padding: 5rem 0 3rem;
+}
+
+.eyebrow {
+  margin: 0 0 0.55rem;
+  color: var(--accent);
+}
+
+h1,
+h2,
+h3,
+p {
+  margin-top: 0;
+}
+
+h1,
+h2 {
+  font-family: Baskerville, "Hiragino Mincho ProN", serif;
+  font-weight: 400;
+}
+
+h1 {
+  margin-bottom: 1.4rem;
+  font-size: clamp(3rem, 9vw, 7.2rem);
+  line-height: 0.98;
+  letter-spacing: -0.055em;
+}
+
+.hero-lead {
+  max-width: 34rem;
+  color: var(--muted);
+  font-size: clamp(1rem, 2vw, 1.25rem);
+}
+
+.quick-start {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border-top: 1px solid var(--line);
+}
+
+.quick-start span {
+  padding: 1rem 0.8rem;
+  color: var(--muted);
+  font-size: 0.76rem;
+  letter-spacing: 0.08em;
+}
+
+.quick-start span + span {
+  border-left: 1px solid var(--line);
+}
+
+.manual-main {
+  padding-bottom: 5rem;
+}
+
+.manual-section {
+  padding: 5rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.section-heading {
+  display: grid;
+  grid-template-columns: 4rem 1fr;
+  align-items: start;
+  margin-bottom: 2.5rem;
+}
+
+.section-number {
+  margin: 0;
+  color: var(--accent);
+}
+
+h2 {
+  margin-bottom: 0;
+  font-size: clamp(2rem, 5vw, 3.8rem);
+  line-height: 1.08;
+}
+
+.step-grid,
+.effect-grid,
+.trouble-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+}
+
+.step-card,
+.effect-card,
+.region-note,
+.trouble-grid article,
+.monitor-note {
+  padding: 1.35rem;
+  border: 1px solid var(--line);
+  border-radius: 0.8rem;
+  background: var(--panel);
+  backdrop-filter: blur(12px);
+}
+
+.step-card strong,
+.effect-card h3,
+.region-note h3,
+.trouble-grid strong {
+  display: block;
+  margin-bottom: 0.45rem;
+  font-size: 1rem;
+}
+
+.step-card p,
+.effect-card p,
+.control-list p,
+.region-note p,
+.parameter-row p,
+.monitor-note p,
+.trouble-grid p {
+  margin-bottom: 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.control-name,
+code {
+  color: var(--accent);
+  font-family: "SFMono-Regular", Menlo, monospace;
+}
+
+.control-list {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0 2rem;
+}
+
+.control-list article {
+  display: grid;
+  grid-template-columns: 5rem 1fr;
+  gap: 1rem;
+  padding: 1.3rem 0;
+  border-top: 1px solid var(--line);
+}
+
+.control-list code,
+.parameter-row code {
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+}
+
+.control-list strong,
+.parameter-row strong {
+  display: block;
+  margin-bottom: 0.2rem;
+}
+
+.effect-card {
+  min-height: 14rem;
+}
+
+.effect-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-bottom: 2.8rem;
+}
+
+.effect-card h3 {
+  font-family: Baskerville, "Hiragino Mincho ProN", serif;
+  font-size: 1.55rem;
+  font-weight: 400;
+}
+
+.audio-layout {
+  display: grid;
+  grid-template-columns: 1.35fr 0.65fr;
+  gap: 2rem;
+}
+
+.control-list.compact {
+  grid-template-columns: 1fr;
+}
+
+.region-note {
+  align-self: start;
+}
+
+.region-diagram {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  display: grid;
+  place-items: center;
+  margin-bottom: 1.4rem;
+  border: 1px dashed rgba(232, 229, 220, 0.48);
+  color: var(--muted);
+  font-family: "SFMono-Regular", Menlo, monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.14em;
+  text-align: center;
+}
+
+.corner {
+  position: absolute;
+  width: 1.2rem;
+  height: 1.2rem;
+  border: 1px solid var(--ink);
+  border-radius: 0.2rem;
+  background: #3a3932;
+}
+
+.corner.top {
+  top: -0.6rem;
+  left: -0.6rem;
+}
+
+.corner.bottom {
+  right: -0.6rem;
+  bottom: -0.6rem;
+}
+
+.parameter-table {
+  border-top: 1px solid var(--line);
+}
+
+.parameter-row {
+  display: grid;
+  grid-template-columns: 6rem 9rem 1fr;
+  gap: 1rem;
+  align-items: baseline;
+  padding: 1.15rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.monitor-note {
+  display: grid;
+  grid-template-columns: 10rem 1fr;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.trouble-grid {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.manual-footer {
+  min-height: 8rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+@media (max-width: 44rem) {
+  .manual-hero {
+    min-height: 31rem;
+  }
+
+  .hero-copy {
+    padding-top: 4rem;
+  }
+
+  .quick-start,
+  .step-grid,
+  .effect-grid,
+  .control-list,
+  .audio-layout,
+  .trouble-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .quick-start span + span {
+    border-top: 1px solid var(--line);
+    border-left: 0;
+  }
+
+  .manual-section {
+    padding: 3.5rem 0;
+  }
+
+  .section-heading {
+    grid-template-columns: 2.5rem 1fr;
+  }
+
+  .effect-card {
+    min-height: 0;
+  }
+
+  .effect-top {
+    padding-bottom: 1.5rem;
+  }
+
+  .parameter-row,
+  .monitor-note {
+    grid-template-columns: 4.8rem 1fr;
+  }
+
+  .parameter-row p,
+  .monitor-note p {
+    grid-column: 2;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}

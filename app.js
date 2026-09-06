@@ -3,8 +3,9 @@ import {
   getAudioFmDepth,
   getAudioGainMultiplier,
   getAudioShiftedSaturation,
+  limitAudioFmDepth,
   limitAudioPolyphony,
-} from "./audio-automation.mjs?v=audio-saturation-shift-1";
+} from "./audio-automation.mjs?v=1.5.0";
 
 const audioAutomation = new AudioAutomation();
 const video = document.getElementById("camera");
@@ -138,7 +139,7 @@ const PERFORMANCE_PROFILES = {
     label: "ECO OFF",
     canvasScale: 1,
     renderFps: 60,
-    audioAnalysisIntervalMs: 0,
+    audioAnalysisIntervalMs: 1000 / 30,
     camera: { width: 1920, height: 1080, frameRate: 60 },
     delayPixelBudget: 1280 * 720,
   },
@@ -165,6 +166,8 @@ const AUDIO_MAX_GAIN = 0.1;
 const AUDIO_GAIN_EXPONENT = 1.35;
 const AUDIO_ATTACK_TIME = 0.028;
 const AUDIO_TRIGGER_INTERVAL = 0.08;
+const AUDIO_SCHEDULE_AHEAD_MIN = 0.008;
+const AUDIO_SCHEDULE_AHEAD_MAX = 0.02;
 const AUDIO_VOICE_MIX_GAIN = 1 / 3;
 const AUDIO_OUTPUT_GAIN = 0.78;
 const AUDIO_SOFT_CLIP_DRIVE = 1.45;
@@ -387,7 +390,7 @@ function ensureAudioGraph() {
     throw new Error("WebAudio is not supported.");
   }
 
-  const audioContext = new AudioContextConstructor();
+  const audioContext = new AudioContextConstructor({ latencyHint: "balanced" });
   const audioMasterGain = audioContext.createGain();
   const audioDcFilter = audioContext.createBiquadFilter();
   const audioLimiter = audioContext.createDynamicsCompressor();
@@ -412,7 +415,7 @@ function ensureAudioGraph() {
   audioLimiter.attack.value = 0.004;
   audioLimiter.release.value = 0.16;
   audioSoftClipper.curve = createSoftClipCurve();
-  audioSoftClipper.oversample = "none";
+  audioSoftClipper.oversample = "2x";
   audioOutputGain.gain.value = AUDIO_OUTPUT_GAIN;
 
   audioVoices.forEach((voice) => {
@@ -560,6 +563,14 @@ function getAudioVoiceFrequency(voice) {
   return AUDIO_BASE_C * voice.noteRatio * (2 ** (octaveOffset + state.audioOctaveAmount));
 }
 
+function getAudioScheduleTime() {
+  const baseLatency = Number.isFinite(state.audioContext?.baseLatency)
+    ? state.audioContext.baseLatency
+    : AUDIO_SCHEDULE_AHEAD_MIN;
+  const lookAhead = clamp(baseLatency * 0.5, AUDIO_SCHEDULE_AHEAD_MIN, AUDIO_SCHEDULE_AHEAD_MAX);
+  return state.audioContext.currentTime + lookAhead;
+}
+
 function drawAudioMonitor(frame = null, renderedAt = performance.now(), force = false) {
   if (!audioMonitorContext || (!force && renderedAt - state.lastAudioMonitorAt < AUDIO_MONITOR_INTERVAL_MS)) {
     return;
@@ -606,7 +617,7 @@ function applyContinuousAudio(frame, now, masterGain) {
     const note = frame.notes[index];
     const intensity = note.active ? note.intensity : 0;
     const dominance = note.active ? note.dominance : 0;
-    const fmDepth = getAudioFmDepth(
+    const rawFmDepth = getAudioFmDepth(
       frame.saturation,
       dominance,
       timbre.fmIndex,
@@ -614,6 +625,12 @@ function applyContinuousAudio(frame, now, masterGain) {
     );
     const voiceGain = note.active ? ((0.12 + (intensity * 0.88)) * dominance * AUDIO_VOICE_MIX_GAIN) : 0;
     const frequency = getAudioVoiceFrequency(voice);
+    const fmDepth = limitAudioFmDepth(
+      rawFmDepth,
+      frequency,
+      timbre.modulatorRatio,
+      state.audioContext.sampleRate,
+    );
 
     audioAutomation.target(voice.carrier.frequency, frequency, now, 0.045);
     audioAutomation.target(voice.modulator.frequency, frequency * timbre.modulatorRatio, now, 0.045);
@@ -622,7 +639,7 @@ function applyContinuousAudio(frame, now, masterGain) {
   });
 }
 
-function triggerEnvelopeAudio(frame, now) {
+function triggerEnvelopeAudio(frame, now, volumeScale) {
   const releaseTime = clamp(state.audioReleaseAmount / 1000, 0.02, 2);
   const timbre = getAudioTimbre();
 
@@ -630,16 +647,27 @@ function triggerEnvelopeAudio(frame, now) {
     const note = frame.notes[index];
     const intensity = note.active ? note.intensity : 0;
     const dominance = note.active ? note.dominance : 0;
-    const fmDepth = getAudioFmDepth(
+    if (!note.active) {
+      return;
+    }
+
+    const rawFmDepth = getAudioFmDepth(
       frame.saturation,
       dominance,
       timbre.fmIndex,
       timbre.dominancePower,
     );
-    const peakGain = note.active ? ((0.12 + (intensity * 0.88)) * dominance * AUDIO_VOICE_MIX_GAIN) : 0;
+    const peakGain = (0.12 + (intensity * 0.88))
+      * dominance * AUDIO_VOICE_MIX_GAIN * volumeScale;
     const attackEnd = now + AUDIO_ATTACK_TIME;
     const releaseEnd = attackEnd + releaseTime;
     const frequency = getAudioVoiceFrequency(voice);
+    const fmDepth = limitAudioFmDepth(
+      rawFmDepth,
+      frequency,
+      timbre.modulatorRatio,
+      state.audioContext.sampleRate,
+    );
 
     audioAutomation.target(voice.carrier.frequency, frequency, now, 0.045);
     audioAutomation.target(voice.modulator.frequency, frequency * timbre.modulatorRatio, now, 0.045);
@@ -666,23 +694,32 @@ function updateAudioFromFrame(renderedAt = performance.now()) {
     return;
   }
 
-  const now = state.audioContext.currentTime;
+  const currentTime = state.audioContext.currentTime;
+  const now = getAudioScheduleTime();
   const gainMultiplier = getAudioGainMultiplier(state.audioGainAmount);
-  const masterGain = (frame.volume ** AUDIO_GAIN_EXPONENT) * AUDIO_MAX_GAIN * gainMultiplier;
+  const volumeScale = frame.volume ** AUDIO_GAIN_EXPONENT;
+  const masterGain = volumeScale * AUDIO_MAX_GAIN * gainMultiplier;
   const analysisDelta = getAudioAnalysisDelta(frame, state.lastAudioAnalysis);
   const triggerThreshold = clamp(state.audioThresholdAmount / 100, 0, 1);
-  const shouldTriggerEnvelope = state.audioEnvelopeEnabled
-    && analysisDelta > 0 && analysisDelta >= triggerThreshold
-    && now >= state.nextAudioTriggerAt;
   const voicedFrame = limitAudioPolyphony(frame, state.audioPolyphonyAmount);
+  const hasActiveVoice = voicedFrame.notes.some((note) => note.active);
+  const shouldTriggerEnvelope = state.audioEnvelopeEnabled
+    && hasActiveVoice
+    && analysisDelta > 0 && analysisDelta >= triggerThreshold
+    && currentTime >= state.nextAudioTriggerAt;
   state.lastVoicedFrame = voicedFrame;
   drawAudioMonitor(voicedFrame, renderedAt);
 
   if (state.audioEnvelopeEnabled) {
-    audioAutomation.target(state.audioMasterGain.gain, masterGain, now, 0.05);
+    audioAutomation.target(
+      state.audioMasterGain.gain,
+      AUDIO_MAX_GAIN * gainMultiplier,
+      now,
+      0.05,
+    );
     if (shouldTriggerEnvelope) {
-      triggerEnvelopeAudio(voicedFrame, now);
-      state.nextAudioTriggerAt = now + AUDIO_TRIGGER_INTERVAL;
+      triggerEnvelopeAudio(voicedFrame, now, volumeScale);
+      state.nextAudioTriggerAt = currentTime + AUDIO_TRIGGER_INTERVAL;
     }
   } else {
     applyContinuousAudio(voicedFrame, now, masterGain);
@@ -759,6 +796,18 @@ function toggleAudioEnvelope() {
   state.audioEnvelopeEnabled = !state.audioEnvelopeEnabled;
   state.nextAudioTriggerAt = 0;
   state.lastAudioAnalysis = null;
+  if (
+    state.audioEnvelopeEnabled
+    && state.audioContext?.state === "running"
+    && state.audioVoices
+  ) {
+    const now = getAudioScheduleTime();
+    state.audioVoices.forEach((voice) => {
+      audioAutomation.ramp(voice.voiceGain.gain, now, [
+        { value: 0, time: now + 0.05 },
+      ]);
+    });
+  }
   updateAudioEnvelopeToggle();
 }
 
@@ -783,11 +832,17 @@ function applyAudioTimbreToVoices() {
       const note = frame.notes[index];
       const dominance = note.active ? note.dominance : 0;
       const frequency = getAudioVoiceFrequency(voice);
-      const fmDepth = getAudioFmDepth(
+      const rawFmDepth = getAudioFmDepth(
         frame.saturation,
         dominance,
         timbre.fmIndex,
         timbre.dominancePower,
+      );
+      const fmDepth = limitAudioFmDepth(
+        rawFmDepth,
+        frequency,
+        timbre.modulatorRatio,
+        state.audioContext.sampleRate,
       );
       audioAutomation.target(voice.modulator.frequency, frequency * timbre.modulatorRatio, now, 0.025);
       audioAutomation.target(voice.modulatorGain.gain, frequency * fmDepth, now, 0.025);
@@ -914,7 +969,14 @@ async function onVisibilityChange() {
     }
     try {
       if (state.audioContext?.state === "running") {
-        await state.audioContext.suspend();
+        const now = state.audioContext.currentTime;
+        audioAutomation.ramp(state.audioMasterGain.gain, now, [
+          { value: 0, time: now + 0.02 },
+        ]);
+        await new Promise((resolve) => window.setTimeout(resolve, 25));
+        if (changeToken === state.visibilityChangeToken && !state.pageVisible) {
+          await state.audioContext.suspend();
+        }
       }
     } catch (error) {
       console.warn("Audio processing could not be suspended.", error);

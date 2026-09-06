@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#171713" />
+    <title>SimpleCam UI Manual</title>
+    <link rel="stylesheet" href="./manual.css?v=1.5.0" />
+  </head>
+  <body>
+    <header class="manual-hero">
+      <nav class="manual-nav" aria-label="Manual navigation">
+        <span class="manual-mark">SIMPLECAM / FIELD GUIDE</span>
+        <a class="back-link" href="./">CAMERAへ戻る</a>
+      </nav>
+      <div class="hero-copy">
+        <p class="eyebrow">UI MANUAL</p>
+        <h1>映像を触り、<br />色を音にする。</h1>
+        <p class="hero-lead">
+          SimpleCamの画面操作、映像エフェクト、画像連動サウンドをまとめた操作ガイドです。
+        </p>
+      </div>
+      <div class="quick-start" aria-label="Quick start">
+        <span>01 カメラを許可</span>
+        <span>02 画角を調整</span>
+        <span>03 効果と音を選択</span>
+      </div>
+    </header>
+
+    <main class="manual-main">
+      <section class="manual-section" id="start">
+        <div class="section-heading">
+          <p class="section-number">01</p>
+          <div>
+            <p class="eyebrow">GETTING STARTED</p>
+            <h2>最初の操作</h2>
+          </div>
+        </div>
+        <div class="step-grid">
+          <article class="step-card">
+            <strong>カメラを許可</strong>
+            <p>HTTPSでページを開き、ブラウザのカメラ使用確認を許可します。映像や音声は保存・送信しません。</p>
+          </article>
+          <article class="step-card">
+            <strong>画角を決める</strong>
+            <p>2本指のピンチで1〜9倍にズーム。1本指のスワイプで表示位置を移動します。</p>
+          </article>
+          <article class="step-card">
+            <strong>音を開始</strong>
+            <p><span class="control-name">SND OFF</span>を押してONにします。端末の音量を低めから調整してください。</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="manual-section" id="screen-controls">
+        <div class="section-heading">
+          <p class="section-number">02</p>
+          <div>
+            <p class="eyebrow">SCREEN CONTROLS</p>
+            <h2>画面上部のボタン</h2>
+          </div>
+        </div>
+        <div class="control-list">
+          <article><code>HELP</code><div><strong>マニュアル</strong><p>このページを別タブで開きます。</p></div></article>
+          <article><code>ECO</code><div><strong>処理負荷</strong><p>OFF → ON → MAXの順に切り替えます。解像度、FPS、音響解析頻度を段階的に下げます。</p></div></article>
+          <article><code>MIR</code><div><strong>左右反転</strong><p>カメラ映像と音響解析位置を左右反転します。</p></div></article>
+          <article><code>REAR<br />FRONT</code><div><strong>カメラ切り替え</strong><p>アウトカメラとインカメラを切り替えます。利用可能なカメラが1台の場合は表示されません。</p></div></article>
+          <article><code>FULL</code><div><strong>フルスクリーン</strong><p>ブラウザが対応している場合に全画面表示へ切り替えます。</p></div></article>
+          <article><code>UI</code><div><strong>UI表示</strong><p>右上のボタンで操作UIをまとめて表示・非表示にします。UI OFFでもこのボタンは残ります。</p></div></article>
+        </div>
+      </section>
+
+      <section class="manual-section" id="visual-effects">
+        <div class="section-heading">
+          <p class="section-number">03</p>
+          <div>
+            <p class="eyebrow">VISUAL EFFECTS</p>
+            <h2>映像エフェクト</h2>
+          </div>
+        </div>
+        <div class="effect-grid">
+          <article class="effect-card">
+            <div class="effect-top"><code>DELAY</code><span>初期値 0</span></div>
+            <h3>時間をずらす</h3>
+            <p>30枚のリングバッファから過去のカメラフレームを表示します。0では遅延しません。</p>
+          </article>
+          <article class="effect-card">
+            <div class="effect-top"><code>CONTRAST</code><span>初期値 0</span></div>
+            <h3>暗部を切る</h3>
+            <p>値より暗いピクセルを黒へ落とし、それ以外の明るさとコントラストを持ち上げます。</p>
+          </article>
+          <article class="effect-card">
+            <div class="effect-top"><code>TRAIL</code><span>初期値 0</span></div>
+            <h3>残像を残す</h3>
+            <p>直前までの描画結果を減衰しながら最新フレームと合成します。値が大きいほど残像が長く残ります。</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="manual-section" id="audio">
+        <div class="section-heading">
+          <p class="section-number">04</p>
+          <div>
+            <p class="eyebrow">IMAGE TO AUDIO</p>
+            <h2>音響コントロール</h2>
+          </div>
+        </div>
+        <div class="audio-layout">
+          <div class="control-list compact">
+            <article><code>SND</code><div><strong>サウンド</strong><p>画像解析と合成音をON/OFFします。初期状態はOFFです。</p></div></article>
+            <article><code>ENV</code><div><strong>エンベロープ</strong><p>ONでは画像変化をトリガーに発音し、固定AttackからRELで減衰します。OFFでは連続音になります。</p></div></article>
+            <article><code>RGB</code><div><strong>音域配置</strong><p>B・G・Rへ低・中・高オクターブを割り当て、BGR → GRB → RBGで交代します。</p></div></article>
+            <article><code>TONE</code><div><strong>音色</strong><p>SIN、TRI、FM 1:1、FM 3:1、FM 3:2、FM SQRT2を順番に切り替えます。</p></div></article>
+          </div>
+          <aside class="region-note">
+            <div class="region-diagram" aria-hidden="true">
+              <i class="corner top"></i>
+              <span>ANALYSIS<br />REGION</span>
+              <i class="corner bottom"></i>
+            </div>
+            <h3>点線の矩形が音になる範囲</h3>
+            <p>左上と右下のハンドルをドラッグして位置と大きさを変更します。音量、音程、音色、発音トリガーはこの領域だけを解析します。</p>
+          </aside>
+        </div>
+      </section>
+
+      <section class="manual-section" id="audio-sliders">
+        <div class="section-heading">
+          <p class="section-number">05</p>
+          <div>
+            <p class="eyebrow">AUDIO PARAMETERS</p>
+            <h2>音響スライダー</h2>
+          </div>
+        </div>
+        <div class="parameter-table" role="table" aria-label="Audio slider reference">
+          <div class="parameter-row" role="row"><code>THRESH</code><strong>発音感度</strong><p>ENV ON時だけ使用。画像変化がこの閾値以上になると再発音します。小さいほど敏感です。</p></div>
+          <div class="parameter-row" role="row"><code>REL</code><strong>余韻</strong><p>ENV ON時のRelease時間を20〜2000msで調整します。</p></div>
+          <div class="parameter-row" role="row"><code>OCT</code><strong>基準音域</strong><p>合成音全体を−2〜＋2オクターブ移動します。</p></div>
+          <div class="parameter-row" role="row"><code>POLY</code><strong>同時発音数</strong><p>画像内で支配率の高い音から、最大1〜12音を選択します。</p></div>
+          <div class="parameter-row" role="row"><code>GAIN</code><strong>最大音量</strong><p>0が基準音量、100がコンプレッサー入力で基準の10倍です。急に上げず少しずつ調整してください。</p></div>
+          <div class="parameter-row" role="row"><code>SAT</code><strong>彩度評価</strong><p>0では高彩度を強く評価。100では反転し、白・灰色など低彩度を強く評価します。50では両者が均等です。</p></div>
+        </div>
+        <div class="monitor-note">
+          <code>POLY MONITOR</code>
+          <p>12本のバーが現在選ばれている音を表示します。右側の数値は「選択中の音数 / POLY上限」です。</p>
+        </div>
+      </section>
+
+      <section class="manual-section" id="troubleshooting">
+        <div class="section-heading">
+          <p class="section-number">06</p>
+          <div>
+            <p class="eyebrow">TROUBLESHOOTING</p>
+            <h2>うまく動かないとき</h2>
+          </div>
+        </div>
+        <div class="trouble-grid">
+          <article><strong>映像が出ない</strong><p>ブラウザのサイト設定でカメラを許可し、HTTPSの公開ページから開き直します。</p></article>
+          <article><strong>音が出ない</strong><p>SNDがONか、端末が消音状態でないか、メディア音量が上がっているかを確認します。</p></article>
+          <article><strong>動作が重い</strong><p>ECO ONまたはECO MAXを選び、POLY、DELAY、TRAILを小さくします。</p></article>
+          <article><strong>カメラ切り替えがない</strong><p>ブラウザから複数カメラを利用できない場合、REAR / FRONTボタンは自動的に隠れます。</p></article>
+        </div>
+      </section>
+    </main>
+
+    <footer class="manual-footer">
+      <span>SimpleCam UI Manual</span>
+      <a href="./">カメラを開く</a>
+    </footer>
+  </body>
+</html>

@@ -81,6 +81,16 @@ export function getAudioFmDepth(saturation, dominance, index, dominancePower = 1
   return safeSaturation * (safeDominance ** dominancePower) * Math.max(0, index);
 }
 
+export function limitAudioFmDepth(depth, carrierFrequency, modulatorRatio, sampleRate) {
+  const safeDepth = Math.max(0, depth);
+  const safeCarrier = Math.max(1, carrierFrequency);
+  const safeRatio = Math.max(0, modulatorRatio);
+  const safeSampleRate = Number.isFinite(sampleRate) && sampleRate > 0 ? sampleRate : 48000;
+  // Keep the upper sidebands with meaningful energy below 90% of Nyquist.
+  const maxDepth = Math.max(0, (safeSampleRate * 0.45 / safeCarrier) - 1 - safeRatio);
+  return Math.min(safeDepth, maxDepth);
+}
+
 export function limitAudioPolyphony(frame, maxVoices) {
   const voiceLimit = Math.max(1, Math.min(12, Math.round(maxVoices)));
   const rankedNotes = frame.notes
