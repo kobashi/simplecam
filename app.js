@@ -1,10 +1,10 @@
 import {
   AudioAutomation,
   getAudioFmDepth,
-  getAudioGainExponent,
   getAudioGainMultiplier,
+  getAudioShiftedSaturation,
   limitAudioPolyphony,
-} from "./audio-automation.mjs?v=audio-fm-presets-1";
+} from "./audio-automation.mjs?v=audio-saturation-shift-1";
 
 const audioAutomation = new AudioAutomation();
 const video = document.getElementById("camera");
@@ -28,7 +28,7 @@ const audioReleaseSlider = document.getElementById("audioReleaseSlider");
 const audioOctaveSlider = document.getElementById("audioOctaveSlider");
 const audioPolyphonySlider = document.getElementById("audioPolyphonySlider");
 const audioGainSlider = document.getElementById("audioGainSlider");
-const audioCurveSlider = document.getElementById("audioCurveSlider");
+const audioSaturationSlider = document.getElementById("audioSaturationSlider");
 const contrastThresholdValue = document.getElementById("contrastThresholdValue");
 const trailDelayValue = document.getElementById("trailDelayValue");
 const trailAmountValue = document.getElementById("trailAmountValue");
@@ -37,7 +37,7 @@ const audioReleaseValue = document.getElementById("audioReleaseValue");
 const audioOctaveValue = document.getElementById("audioOctaveValue");
 const audioPolyphonyValue = document.getElementById("audioPolyphonyValue");
 const audioGainValue = document.getElementById("audioGainValue");
-const audioCurveValue = document.getElementById("audioCurveValue");
+const audioSaturationValue = document.getElementById("audioSaturationValue");
 const audioMonitor = document.getElementById("audioMonitor");
 const audioMonitorValue = document.getElementById("audioMonitorValue");
 const statusPanel = document.getElementById("statusPanel");
@@ -88,7 +88,7 @@ const state = {
   audioOctaveAmount: Number(audioOctaveSlider.value),
   audioPolyphonyAmount: Number(audioPolyphonySlider.value),
   audioGainAmount: Number(audioGainSlider.value),
-  audioCurveAmount: Number(audioCurveSlider.value),
+  audioSaturationAmount: Number(audioSaturationSlider.value),
   audioContext: null,
   audioMasterGain: null,
   audioDcFilter: null,
@@ -162,6 +162,7 @@ const PERFORMANCE_PROFILES = {
 const AUDIO_ANALYSIS_WIDTH = 64;
 const AUDIO_ANALYSIS_HEIGHT = 36;
 const AUDIO_MAX_GAIN = 0.1;
+const AUDIO_GAIN_EXPONENT = 1.35;
 const AUDIO_ATTACK_TIME = 0.028;
 const AUDIO_TRIGGER_INTERVAL = 0.08;
 const AUDIO_VOICE_MIX_GAIN = 1 / 3;
@@ -502,15 +503,16 @@ function analyzeAudioFrame() {
     const pixelMax = Math.max(r, g, b);
     const pixelMin = Math.min(r, g, b);
     const saturation = pixelMax > 0 ? (pixelMax - pixelMin) / pixelMax : 0;
+    const shiftedSaturation = getAudioShiftedSaturation(saturation, state.audioSaturationAmount);
 
     maxBrightness = Math.max(maxBrightness, pixelMax);
 
     if (pixelMax > 0) {
-      saturationSum += saturation;
+      saturationSum += shiftedSaturation;
       saturatedPixels += 1;
     }
 
-    if (saturation < AUDIO_PITCH_SATURATION_THRESHOLD) {
+    if (pixelMax <= 0 || shiftedSaturation < AUDIO_PITCH_SATURATION_THRESHOLD) {
       continue;
     }
 
@@ -665,9 +667,8 @@ function updateAudioFromFrame(renderedAt = performance.now()) {
   }
 
   const now = state.audioContext.currentTime;
-  const gainExponent = getAudioGainExponent(state.audioCurveAmount);
   const gainMultiplier = getAudioGainMultiplier(state.audioGainAmount);
-  const masterGain = (frame.volume ** gainExponent) * AUDIO_MAX_GAIN * gainMultiplier;
+  const masterGain = (frame.volume ** AUDIO_GAIN_EXPONENT) * AUDIO_MAX_GAIN * gainMultiplier;
   const analysisDelta = getAudioAnalysisDelta(frame, state.lastAudioAnalysis);
   const triggerThreshold = clamp(state.audioThresholdAmount / 100, 0, 1);
   const shouldTriggerEnvelope = state.audioEnvelopeEnabled
@@ -1143,7 +1144,7 @@ function updateFilterAvailability() {
   audioOctaveSlider.disabled = !filtersAvailable;
   audioPolyphonySlider.disabled = !filtersAvailable;
   audioGainSlider.disabled = !filtersAvailable;
-  audioCurveSlider.disabled = !filtersAvailable;
+  audioSaturationSlider.disabled = !filtersAvailable;
 }
 
 function formatStrength(value) {
@@ -1159,7 +1160,7 @@ function updateTrailControls() {
   audioOctaveSlider.value = String(state.audioOctaveAmount);
   audioPolyphonySlider.value = String(state.audioPolyphonyAmount);
   audioGainSlider.value = String(state.audioGainAmount);
-  audioCurveSlider.value = String(state.audioCurveAmount);
+  audioSaturationSlider.value = String(state.audioSaturationAmount);
   contrastThresholdValue.textContent = formatStrength(state.contrastThresholdAmount);
   trailDelayValue.textContent = formatStrength(state.trailDelayAmount);
   trailAmountValue.textContent = formatStrength(state.trailAmount);
@@ -1170,9 +1171,7 @@ function updateTrailControls() {
     : formatStrength(state.audioOctaveAmount);
   audioPolyphonyValue.textContent = formatStrength(state.audioPolyphonyAmount);
   audioGainValue.textContent = formatStrength(state.audioGainAmount);
-  audioCurveValue.textContent = state.audioCurveAmount > 0
-    ? `+${state.audioCurveAmount}`
-    : formatStrength(state.audioCurveAmount);
+  audioSaturationValue.textContent = formatStrength(state.audioSaturationAmount);
 }
 
 function shouldRenderFilteredPreview() {
@@ -1755,8 +1754,9 @@ function onAudioGainSliderInput(event) {
   updateTrailControls();
 }
 
-function onAudioCurveSliderInput(event) {
-  state.audioCurveAmount = Number(event.currentTarget.value);
+function onAudioSaturationSliderInput(event) {
+  state.audioSaturationAmount = Number(event.currentTarget.value);
+  state.lastAudioAnalysis = null;
   updateTrailControls();
 }
 
@@ -2026,7 +2026,7 @@ audioReleaseSlider.addEventListener("input", onAudioReleaseSliderInput);
 audioOctaveSlider.addEventListener("input", onAudioOctaveSliderInput);
 audioPolyphonySlider.addEventListener("input", onAudioPolyphonySliderInput);
 audioGainSlider.addEventListener("input", onAudioGainSliderInput);
-audioCurveSlider.addEventListener("input", onAudioCurveSliderInput);
+audioSaturationSlider.addEventListener("input", onAudioSaturationSliderInput);
 
 updateFullscreenButton();
 updateViewportMetrics();

@@ -3,8 +3,8 @@ import test from "node:test";
 import {
   AudioAutomation,
   getAudioFmDepth,
-  getAudioGainExponent,
   getAudioGainMultiplier,
+  getAudioShiftedSaturation,
   limitAudioPolyphony,
 } from "../audio-automation.mjs";
 
@@ -134,8 +134,9 @@ test("polyphony limiter enforces every setting from 1 through 12", () => {
   }
 });
 
-test("curve control maps minimum, center and maximum to the requested exponents", () => {
-  close(getAudioGainExponent(-100), 0.65);
-  close(getAudioGainExponent(0), 1);
-  close(getAudioGainExponent(100), 1.35);
+test("saturation shift moves continuously from normal to inverted", () => {
+  close(getAudioShiftedSaturation(0.2, 0), 0.2);
+  close(getAudioShiftedSaturation(0.2, 50), 0.5);
+  close(getAudioShiftedSaturation(0.2, 100), 0.8);
+  close(getAudioShiftedSaturation(0.8, 100), 0.2);
 });

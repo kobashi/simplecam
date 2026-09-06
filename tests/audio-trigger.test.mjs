@@ -15,12 +15,12 @@ function harness() {
     audioEnabled: true, audioEnvelopeEnabled: true,
     audioContext: { currentTime: 0 }, audioVoices: [], audioMasterGain: { gain: {} },
     audioThresholdAmount: 0, lastAudioAnalysis: null, lastAudioAnalysisAt: 0,
-    nextAudioTriggerAt: 0, audioGainAmount: 0, audioCurveAmount: 100,
+    nextAudioTriggerAt: 0, audioGainAmount: 0,
   };
   const context = vm.createContext({
     state, AUDIO_MAX_GAIN: 0.1, AUDIO_TRIGGER_INTERVAL: 0.08,
-    getAudioGainExponent: () => 1.35,
     getAudioGainMultiplier: () => 1,
+    AUDIO_GAIN_EXPONENT: 1.35,
     clamp: (n, min, max) => Math.max(min, Math.min(max, n)),
     getPerformanceProfile: () => ({ audioAnalysisIntervalMs: 0 }),
     analyzeAudioFrame: () => ({ volume: 1 }),

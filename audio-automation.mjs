@@ -69,9 +69,10 @@ export function getAudioGainMultiplier(amount) {
   return 1 + (normalized * 9);
 }
 
-export function getAudioGainExponent(amount) {
-  const normalized = Math.max(-100, Math.min(100, amount)) / 100;
-  return 1 + (normalized * 0.35);
+export function getAudioShiftedSaturation(saturation, amount) {
+  const safeSaturation = Math.max(0, Math.min(1, saturation));
+  const shift = Math.max(0, Math.min(100, amount)) / 100;
+  return safeSaturation + (((1 - safeSaturation) - safeSaturation) * shift);
 }
 
 export function getAudioFmDepth(saturation, dominance, index, dominancePower = 1) {

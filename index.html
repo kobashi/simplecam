@@ -188,17 +188,17 @@
               <span id="audioGainValue" class="trail-slider-value">0</span>
             </label>
             <label class="trail-slider">
-              <span class="trail-slider-label">CURVE</span>
+              <span class="trail-slider-label">SAT</span>
               <input
-                id="audioCurveSlider"
+                id="audioSaturationSlider"
                 class="trail-slider-input"
                 type="range"
-                min="-100"
+                min="0"
                 max="100"
                 step="1"
-                value="100"
+                value="0"
               />
-              <span id="audioCurveValue" class="trail-slider-value">+100</span>
+              <span id="audioSaturationValue" class="trail-slider-value">0</span>
             </label>
           </div>
           <div class="audio-monitor-panel" aria-label="Polyphony monitor">
@@ -264,6 +264,6 @@
       </section>
     </main>
 
-    <script type="module" src="./app.js?v=audio-fm-presets-1"></script>
+    <script type="module" src="./app.js?v=audio-saturation-shift-1"></script>
   </body>
 </html>
