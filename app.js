@@ -5,7 +5,7 @@ import {
   getAudioGainExponent,
   getAudioGainMultiplier,
   limitAudioPolyphony,
-} from "./audio-automation.mjs?v=audio-fm-lfo-5hz";
+} from "./audio-automation.mjs?v=audio-fm-lfo-1hz-double";
 
 const audioAutomation = new AudioAutomation();
 const video = document.getElementById("camera");
@@ -170,7 +170,7 @@ const AUDIO_VOICE_MIX_GAIN = 1 / 3;
 const AUDIO_OUTPUT_GAIN = 0.78;
 const AUDIO_SOFT_CLIP_DRIVE = 1.45;
 const AUDIO_MONITOR_INTERVAL_MS = 1000 / 15;
-const AUDIO_FM_LFO_FREQUENCY = 5;
+const AUDIO_FM_LFO_FREQUENCY = 1;
 const AUDIO_PITCH_SATURATION_THRESHOLD = 0.12;
 const AUDIO_REGION_MIN_SIZE = 0.12;
 const AUDIO_REGION_HANDLE_INSET_PX = 22;
@@ -189,7 +189,7 @@ const AUDIO_RGB_ROTATIONS = [
 const AUDIO_TIMBRES = [
   { label: "SIN", carrierType: "sine", modulatorType: "sine", fmIndex: 0, modulatorRatio: 1, dominancePower: 1, lfoAmount: 0 },
   { label: "TRI", carrierType: "triangle", modulatorType: "sine", fmIndex: 0.7, modulatorRatio: 1, dominancePower: 1, lfoAmount: 0 },
-  { label: "FM", carrierType: "sine", modulatorType: "sine", fmIndex: 5.5, modulatorRatio: 2, dominancePower: 0.5, lfoAmount: 0.14 },
+  { label: "FM", carrierType: "sine", modulatorType: "sine", fmIndex: 5.5, modulatorRatio: 2, dominancePower: 0.5, lfoAmount: 0.28 },
 ];
 
 const audioMonitorContext = audioMonitor.getContext("2d", { alpha: true });

@@ -118,8 +118,8 @@ test("FM dominance curve remains audible for small image regions", () => {
 });
 
 test("FM LFO remains subtle and turns off with zero modulation depth", () => {
-  close(getAudioFmLfoDepth(440, 2, 0.14), 123.2);
-  close(getAudioFmLfoDepth(440, 0, 0.14), 0);
+  close(getAudioFmLfoDepth(440, 2, 0.28), 246.4);
+  close(getAudioFmLfoDepth(440, 0, 0.28), 0);
   close(getAudioFmLfoDepth(440, 2, 0), 0);
 });
 

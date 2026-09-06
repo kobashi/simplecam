@@ -80,7 +80,7 @@ export function getAudioFmDepth(saturation, dominance, index, dominancePower = 1
   return safeSaturation * (safeDominance ** dominancePower) * Math.max(0, index);
 }
 
-export function getAudioFmLfoDepth(frequency, fmDepth, amount = 0.14) {
+export function getAudioFmLfoDepth(frequency, fmDepth, amount = 0.28) {
   return Math.max(0, frequency) * Math.max(0, fmDepth) * Math.max(0, amount);
 }
 
