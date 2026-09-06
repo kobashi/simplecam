@@ -1,12 +1,12 @@
 # SimpleCam
 
-## Ver. 1.5.0
+## Ver. 1.5.1
 
 リアカメラを全画面でプレビューする、タッチ操作専用のブラウザアプリです。録画や静止画保存は行わず、プレビュー表示と表示範囲の調整に特化しています。
 
-Ver. 1.5.0 では、音響コントロールと音色を拡張し、高コントラスト映像でのクリップノイズ対策、POLYモニター、ブラウザ版UIマニュアルを追加しています。
+Ver. 1.5.1 では、ヘルプからカメラ画面を重複起動できないようにし、カメラ競合を防止しています。
 
-- Release: `v1.5.0`
+- Release: `v1.5.1`
 - Changelog: [`CHANGELOG.md`](./CHANGELOG.md)
 - UI manual: [`manual.html`](./manual.html)
 - Audio noise investigation: [`docs/audio-noise-investigation.md`](./docs/audio-noise-investigation.md)
