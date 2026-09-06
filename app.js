@@ -1,11 +1,10 @@
 import {
   AudioAutomation,
   getAudioFmDepth,
-  getAudioFmLfoDepth,
   getAudioGainExponent,
   getAudioGainMultiplier,
   limitAudioPolyphony,
-} from "./audio-automation.mjs?v=audio-fm-lfo-1hz-double";
+} from "./audio-automation.mjs?v=audio-fm-fixed-1";
 
 const audioAutomation = new AudioAutomation();
 const video = document.getElementById("camera");
@@ -96,7 +95,6 @@ const state = {
   audioSoftClipper: null,
   audioLimiter: null,
   audioOutputGain: null,
-  audioFmLfo: null,
   audioVoices: null,
   lastAudioAnalysis: null,
   lastAudioAnalysisAt: 0,
@@ -170,7 +168,6 @@ const AUDIO_VOICE_MIX_GAIN = 1 / 3;
 const AUDIO_OUTPUT_GAIN = 0.78;
 const AUDIO_SOFT_CLIP_DRIVE = 1.45;
 const AUDIO_MONITOR_INTERVAL_MS = 1000 / 15;
-const AUDIO_FM_LFO_FREQUENCY = 1;
 const AUDIO_PITCH_SATURATION_THRESHOLD = 0.12;
 const AUDIO_REGION_MIN_SIZE = 0.12;
 const AUDIO_REGION_HANDLE_INSET_PX = 22;
@@ -187,9 +184,9 @@ const AUDIO_RGB_ROTATIONS = [
   { label: "RBG", octaveOffsets: { r: -1, b: 0, g: 1 } },
 ];
 const AUDIO_TIMBRES = [
-  { label: "SIN", carrierType: "sine", modulatorType: "sine", fmIndex: 0, modulatorRatio: 1, dominancePower: 1, lfoAmount: 0 },
-  { label: "TRI", carrierType: "triangle", modulatorType: "sine", fmIndex: 0.7, modulatorRatio: 1, dominancePower: 1, lfoAmount: 0 },
-  { label: "FM", carrierType: "sine", modulatorType: "sine", fmIndex: 5.5, modulatorRatio: 2, dominancePower: 0.5, lfoAmount: 0.28 },
+  { label: "SIN", carrierType: "sine", modulatorType: "sine", fmIndex: 0, modulatorRatio: 1, dominancePower: 1 },
+  { label: "TRI", carrierType: "triangle", modulatorType: "sine", fmIndex: 0.7, modulatorRatio: 1, dominancePower: 1 },
+  { label: "FM", carrierType: "sine", modulatorType: "sine", fmIndex: 4, modulatorRatio: 2, dominancePower: 0.5 },
 ];
 
 const audioMonitorContext = audioMonitor.getContext("2d", { alpha: true });
@@ -358,7 +355,6 @@ function createAudioVoice(audioContext) {
   const carrier = audioContext.createOscillator();
   const modulator = audioContext.createOscillator();
   const modulatorGain = audioContext.createGain();
-  const fmLfoGain = audioContext.createGain();
   const voiceGain = audioContext.createGain();
 
   const timbre = getAudioTimbre();
@@ -366,16 +362,14 @@ function createAudioVoice(audioContext) {
   modulator.type = timbre.modulatorType;
   voiceGain.gain.value = 0;
   modulatorGain.gain.value = 0;
-  fmLfoGain.gain.value = 0;
 
   modulator.connect(modulatorGain);
   modulatorGain.connect(carrier.frequency);
-  fmLfoGain.connect(modulatorGain.gain);
   carrier.connect(voiceGain);
   carrier.start();
   modulator.start();
 
-  return { carrier, modulator, modulatorGain, fmLfoGain, voiceGain };
+  return { carrier, modulator, modulatorGain, voiceGain };
 }
 
 function ensureAudioGraph() {
@@ -394,7 +388,6 @@ function ensureAudioGraph() {
   const audioLimiter = audioContext.createDynamicsCompressor();
   const audioSoftClipper = audioContext.createWaveShaper();
   const audioOutputGain = audioContext.createGain();
-  const audioFmLfo = audioContext.createOscillator();
   const audioVoices = AUDIO_PLANES.flatMap((plane) => (
     AUDIO_NOTE_RATIOS.map((noteRatio, noteIndex) => ({
       plane,
@@ -416,11 +409,8 @@ function ensureAudioGraph() {
   audioSoftClipper.curve = createSoftClipCurve();
   audioSoftClipper.oversample = "none";
   audioOutputGain.gain.value = AUDIO_OUTPUT_GAIN;
-  audioFmLfo.type = "sine";
-  audioFmLfo.frequency.value = AUDIO_FM_LFO_FREQUENCY;
 
   audioVoices.forEach((voice) => {
-    audioFmLfo.connect(voice.fmLfoGain);
     voice.voiceGain.connect(audioMasterGain);
   });
   audioMasterGain.connect(audioDcFilter);
@@ -428,7 +418,6 @@ function ensureAudioGraph() {
   audioLimiter.connect(audioSoftClipper);
   audioSoftClipper.connect(audioOutputGain);
   audioOutputGain.connect(audioContext.destination);
-  audioFmLfo.start();
 
   state.audioContext = audioContext;
   state.audioMasterGain = audioMasterGain;
@@ -436,7 +425,6 @@ function ensureAudioGraph() {
   state.audioSoftClipper = audioSoftClipper;
   state.audioLimiter = audioLimiter;
   state.audioOutputGain = audioOutputGain;
-  state.audioFmLfo = audioFmLfo;
   state.audioVoices = audioVoices;
 }
 
@@ -624,12 +612,6 @@ function applyContinuousAudio(frame, now, masterGain) {
     audioAutomation.target(voice.carrier.frequency, frequency, now, 0.045);
     audioAutomation.target(voice.modulator.frequency, frequency * timbre.modulatorRatio, now, 0.045);
     audioAutomation.target(voice.modulatorGain.gain, frequency * fmDepth, now, 0.045);
-    audioAutomation.target(
-      voice.fmLfoGain.gain,
-      getAudioFmLfoDepth(frequency, fmDepth, timbre.lfoAmount),
-      now,
-      0.08,
-    );
     audioAutomation.target(voice.voiceGain.gain, voiceGain, now, 0.045);
   });
 }
@@ -656,12 +638,6 @@ function triggerEnvelopeAudio(frame, now) {
     audioAutomation.target(voice.carrier.frequency, frequency, now, 0.045);
     audioAutomation.target(voice.modulator.frequency, frequency * timbre.modulatorRatio, now, 0.045);
     audioAutomation.target(voice.modulatorGain.gain, frequency * fmDepth, now, 0.045);
-    audioAutomation.target(
-      voice.fmLfoGain.gain,
-      getAudioFmLfoDepth(frequency, fmDepth, timbre.lfoAmount),
-      now,
-      0.08,
-    );
     audioAutomation.ramp(voice.voiceGain.gain, now, [
       { value: peakGain, time: attackEnd },
       { value: 0, time: releaseEnd },
@@ -742,7 +718,6 @@ async function toggleAudio() {
       state.audioVoices.forEach((voice) => {
         audioAutomation.reset(voice.voiceGain.gain, 0, silentAt);
         audioAutomation.reset(voice.modulatorGain.gain, 0, silentAt);
-        audioAutomation.reset(voice.fmLfoGain.gain, 0, silentAt);
       });
       try {
         await state.audioContext.suspend();
@@ -794,13 +769,9 @@ function applyAudioTimbreToVoices() {
   }
 
   const timbre = getAudioTimbre();
-  const now = state.audioContext?.currentTime;
   state.audioVoices.forEach((voice) => {
     voice.carrier.type = timbre.carrierType;
     voice.modulator.type = timbre.modulatorType;
-    if (timbre.lfoAmount === 0 && now !== undefined) {
-      audioAutomation.reset(voice.fmLfoGain.gain, 0, now);
-    }
   });
 }
 

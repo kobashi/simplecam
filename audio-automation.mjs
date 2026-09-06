@@ -80,10 +80,6 @@ export function getAudioFmDepth(saturation, dominance, index, dominancePower = 1
   return safeSaturation * (safeDominance ** dominancePower) * Math.max(0, index);
 }
 
-export function getAudioFmLfoDepth(frequency, fmDepth, amount = 0.28) {
-  return Math.max(0, frequency) * Math.max(0, fmDepth) * Math.max(0, amount);
-}
-
 export function limitAudioPolyphony(frame, maxVoices) {
   const voiceLimit = Math.max(1, Math.min(12, Math.round(maxVoices)));
   const rankedNotes = frame.notes
