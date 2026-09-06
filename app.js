@@ -4,7 +4,7 @@ import {
   getAudioGainExponent,
   getAudioGainMultiplier,
   limitAudioPolyphony,
-} from "./audio-automation.mjs?v=audio-fm-fixed-1";
+} from "./audio-automation.mjs?v=audio-fm-presets-1";
 
 const audioAutomation = new AudioAutomation();
 const video = document.getElementById("camera");
@@ -186,7 +186,10 @@ const AUDIO_RGB_ROTATIONS = [
 const AUDIO_TIMBRES = [
   { label: "SIN", carrierType: "sine", modulatorType: "sine", fmIndex: 0, modulatorRatio: 1, dominancePower: 1 },
   { label: "TRI", carrierType: "triangle", modulatorType: "sine", fmIndex: 0.7, modulatorRatio: 1, dominancePower: 1 },
-  { label: "FM", carrierType: "sine", modulatorType: "sine", fmIndex: 4, modulatorRatio: 2, dominancePower: 0.5 },
+  { label: "FM 1:1", carrierType: "sine", modulatorType: "sine", fmIndex: 3, modulatorRatio: 1, dominancePower: 0.5 },
+  { label: "FM 3:1", carrierType: "sine", modulatorType: "sine", fmIndex: 3.5, modulatorRatio: 3, dominancePower: 0.5 },
+  { label: "FM 3:2", carrierType: "sine", modulatorType: "sine", fmIndex: 2.5, modulatorRatio: 1.5, dominancePower: 0.5 },
+  { label: "FM SQRT2", carrierType: "sine", modulatorType: "sine", fmIndex: 2, modulatorRatio: Math.SQRT2, dominancePower: 0.5 },
 ];
 
 const audioMonitorContext = audioMonitor.getContext("2d", { alpha: true });
@@ -301,6 +304,7 @@ function updateAudioEnvelopeToggle() {
 function updateAudioOptionButtons() {
   audioRgbToggle.textContent = `RGB ${getAudioRgbRotation().label}`;
   audioTimbreToggle.textContent = `TONE ${getAudioTimbre().label}`;
+  audioTimbreToggle.setAttribute("aria-label", `Change synthesized timbre. Current: ${getAudioTimbre().label}`);
 }
 
 function updateEconomyToggle() {
@@ -769,9 +773,24 @@ function applyAudioTimbreToVoices() {
   }
 
   const timbre = getAudioTimbre();
-  state.audioVoices.forEach((voice) => {
+  const frame = state.lastVoicedFrame;
+  const now = state.audioContext?.currentTime;
+  state.audioVoices.forEach((voice, index) => {
     voice.carrier.type = timbre.carrierType;
     voice.modulator.type = timbre.modulatorType;
+    if (frame && now !== undefined) {
+      const note = frame.notes[index];
+      const dominance = note.active ? note.dominance : 0;
+      const frequency = getAudioVoiceFrequency(voice);
+      const fmDepth = getAudioFmDepth(
+        frame.saturation,
+        dominance,
+        timbre.fmIndex,
+        timbre.dominancePower,
+      );
+      audioAutomation.target(voice.modulator.frequency, frequency * timbre.modulatorRatio, now, 0.025);
+      audioAutomation.target(voice.modulatorGain.gain, frequency * fmDepth, now, 0.025);
+    }
   });
 }
 
