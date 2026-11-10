@@ -5,7 +5,8 @@ import {
   getAudioShiftedSaturation,
   limitAudioFmDepth,
   limitAudioPolyphony,
-} from "./audio-automation.mjs?v=1.5.0";
+} from "./audio-automation.mjs?v=1.6.0";
+import { calculateAnchoredPan, calculatePinchZoom } from "./zoom-math.mjs?v=1.6.0";
 
 const audioAutomation = new AudioAutomation();
 const video = document.getElementById("camera");
@@ -45,6 +46,10 @@ const statusPanel = document.getElementById("statusPanel");
 const audioRegion = document.getElementById("audioRegion");
 const audioRegionHandles = [...audioRegion.querySelectorAll(".audio-region-handle")];
 
+const MIN_ZOOM = 1;
+const MAX_ZOOM = 256;
+const PINCH_ZOOM_EXPONENT = 2;
+
 const gl = filteredPreview.getContext("webgl", {
   alpha: false,
   antialias: false,
@@ -58,8 +63,8 @@ const state = {
   stream: null,
   track: null,
   zoom: 1,
-  minZoom: 1,
-  maxZoom: 3,
+  minZoom: MIN_ZOOM,
+  maxZoom: MAX_ZOOM,
   panX: 0,
   panY: 0,
   renderFrameId: null,
@@ -1418,9 +1423,9 @@ async function setupCamera() {
 
 function configureTrackCapabilities(track) {
   void track;
-  state.minZoom = 1;
-  state.maxZoom = 9;
-  state.zoom = 1;
+  state.minZoom = MIN_ZOOM;
+  state.maxZoom = MAX_ZOOM;
+  state.zoom = MIN_ZOOM;
 }
 
 async function syncNativeZoom() {
@@ -1916,15 +1921,37 @@ function handlePinchMove(points) {
   if (!gesture.startDistance || !gesture.startMidpoint) return;
 
   const distance = getPointDistance(points);
-  const ratio = distance / gesture.startDistance;
-  state.zoom = clamp(gesture.startZoom * ratio, state.minZoom, state.maxZoom);
-
   const midpoint = getMidpoint(points);
+  state.zoom = calculatePinchZoom({
+    startZoom: gesture.startZoom,
+    startDistance: gesture.startDistance,
+    distance,
+    minZoom: state.minZoom,
+    maxZoom: state.maxZoom,
+    exponent: PINCH_ZOOM_EXPONENT,
+  });
+
+  const width = previewShell.clientWidth || window.innerWidth;
+  const height = previewShell.clientHeight || window.innerHeight;
   const bounds = getPanBounds();
-  const deltaX = getPanDelta(midpoint.x - gesture.startMidpoint.x);
-  const deltaY = getPanDelta(midpoint.y - gesture.startMidpoint.y);
-  state.panX = clamp(gesture.startPanX + deltaX, bounds.minX, bounds.maxX);
-  state.panY = clamp(gesture.startPanY + deltaY, bounds.minY, bounds.maxY);
+  const nextPanX = calculateAnchoredPan({
+    startPan: gesture.startPanX,
+    startZoom: gesture.startZoom,
+    zoom: state.zoom,
+    startMidpoint: gesture.startMidpoint.x,
+    midpoint: midpoint.x,
+    viewportCenter: width / 2,
+  });
+  const nextPanY = calculateAnchoredPan({
+    startPan: gesture.startPanY,
+    startZoom: gesture.startZoom,
+    zoom: state.zoom,
+    startMidpoint: gesture.startMidpoint.y,
+    midpoint: midpoint.y,
+    viewportCenter: height / 2,
+  });
+  state.panX = clamp(nextPanX, bounds.minX, bounds.maxX);
+  state.panY = clamp(nextPanY, bounds.minY, bounds.maxY);
   applyPreviewTransform();
   syncNativeZoom();
 }
