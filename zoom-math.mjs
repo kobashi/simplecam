@@ -30,3 +30,9 @@ export function calculateAnchoredPan({
   return midpoint - viewportCenter
     - (zoomRatio * (startMidpoint - viewportCenter - startPan));
 }
+
+export function formatZoom(zoom) {
+  const safeZoom = Number.isFinite(zoom) ? Math.max(1, zoom) : 1;
+  const digits = safeZoom >= 100 ? 0 : 1;
+  return `${safeZoom.toFixed(digits)}x`;
+}

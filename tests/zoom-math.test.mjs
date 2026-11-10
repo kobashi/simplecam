@@ -1,26 +1,26 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { calculateAnchoredPan, calculatePinchZoom } from "../zoom-math.mjs";
+import { calculateAnchoredPan, calculatePinchZoom, formatZoom } from "../zoom-math.mjs";
 
-test("pinch zoom uses a smooth exponential curve up to 256x", () => {
+test("pinch zoom uses a smooth exponential curve up to 512x", () => {
   assert.equal(calculatePinchZoom({
     startZoom: 1,
     startDistance: 100,
     distance: 200,
     minZoom: 1,
-    maxZoom: 256,
+    maxZoom: 512,
     exponent: 2,
   }), 4);
 
   assert.equal(calculatePinchZoom({
-    startZoom: 128,
+    startZoom: 256,
     startDistance: 100,
     distance: 200,
     minZoom: 1,
-    maxZoom: 256,
+    maxZoom: 512,
     exponent: 2,
-  }), 256);
+  }), 512);
 });
 
 test("pinch zoom clamps at the minimum without invalid distances", () => {
@@ -29,7 +29,7 @@ test("pinch zoom clamps at the minimum without invalid distances", () => {
     startDistance: 100,
     distance: 25,
     minZoom: 1,
-    maxZoom: 256,
+    maxZoom: 512,
     exponent: 2,
   }), 1);
 
@@ -38,7 +38,7 @@ test("pinch zoom clamps at the minimum without invalid distances", () => {
     startDistance: 0,
     distance: 50,
     minZoom: 1,
-    maxZoom: 256,
+    maxZoom: 512,
     exponent: 2,
   }), 4);
 });
@@ -61,4 +61,12 @@ test("anchored pan keeps the content below an off-center pinch midpoint", () => 
   const sourceOffset = (startMidpoint - viewportCenter - startPan) / startZoom;
 
   assert.equal(viewportCenter + pan + (zoom * sourceOffset), midpoint);
+});
+
+test("zoom indicator formatting stays readable across the full range", () => {
+  assert.equal(formatZoom(1), "1.0x");
+  assert.equal(formatZoom(12.34), "12.3x");
+  assert.equal(formatZoom(255.6), "256x");
+  assert.equal(formatZoom(511.6), "512x");
+  assert.equal(formatZoom(Number.NaN), "1.0x");
 });

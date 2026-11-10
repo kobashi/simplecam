@@ -7,7 +7,7 @@
       content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no"
     />
     <title>Camera Frame Preview</title>
-    <link rel="stylesheet" href="./styles.css?v=1.6.0" />
+    <link rel="stylesheet" href="./styles.css?v=zoom-hud-2" />
   </head>
   <body>
     <main class="app">
@@ -269,10 +269,11 @@
             FULL
           </button>
         </div>
+        <div id="zoomIndicator" class="zoom-indicator" aria-hidden="true">1.0x</div>
         <div class="status-panel is-hidden" id="statusPanel" aria-live="polite"></div>
       </section>
     </main>
 
-    <script type="module" src="./app.js?v=1.6.0"></script>
+    <script type="module" src="./app.js?v=zoom-hud-2"></script>
   </body>
 </html>

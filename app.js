@@ -6,7 +6,11 @@ import {
   limitAudioFmDepth,
   limitAudioPolyphony,
 } from "./audio-automation.mjs?v=1.6.0";
-import { calculateAnchoredPan, calculatePinchZoom } from "./zoom-math.mjs?v=1.6.0";
+import {
+  calculateAnchoredPan,
+  calculatePinchZoom,
+  formatZoom,
+} from "./zoom-math.mjs?v=zoom-hud-2";
 
 const audioAutomation = new AudioAutomation();
 const video = document.getElementById("camera");
@@ -43,12 +47,15 @@ const audioSaturationValue = document.getElementById("audioSaturationValue");
 const audioMonitor = document.getElementById("audioMonitor");
 const audioMonitorValue = document.getElementById("audioMonitorValue");
 const statusPanel = document.getElementById("statusPanel");
+const zoomIndicator = document.getElementById("zoomIndicator");
 const audioRegion = document.getElementById("audioRegion");
 const audioRegionHandles = [...audioRegion.querySelectorAll(".audio-region-handle")];
 
 const MIN_ZOOM = 1;
-const MAX_ZOOM = 256;
+const MAX_ZOOM = 512;
 const PINCH_ZOOM_EXPONENT = 2;
+const ZOOM_INDICATOR_HIDE_DELAY_MS = 700;
+let zoomIndicatorHideTimer = null;
 
 const gl = filteredPreview.getContext("webgl", {
   alpha: false,
@@ -1905,12 +1912,34 @@ function resetSinglePointerAnchor(point) {
     : null;
 }
 
+function showZoomIndicator() {
+  if (zoomIndicatorHideTimer !== null) {
+    window.clearTimeout(zoomIndicatorHideTimer);
+    zoomIndicatorHideTimer = null;
+  }
+
+  zoomIndicator.textContent = formatZoom(state.zoom);
+  zoomIndicator.classList.add("is-visible");
+}
+
+function scheduleZoomIndicatorHide() {
+  if (zoomIndicatorHideTimer !== null) {
+    window.clearTimeout(zoomIndicatorHideTimer);
+  }
+
+  zoomIndicatorHideTimer = window.setTimeout(() => {
+    zoomIndicator.classList.remove("is-visible");
+    zoomIndicatorHideTimer = null;
+  }, ZOOM_INDICATOR_HIDE_DELAY_MS);
+}
+
 function beginPinch(points) {
   gesture.startDistance = getPointDistance(points);
   gesture.startZoom = state.zoom;
   gesture.startMidpoint = getMidpoint(points);
   gesture.startPanX = state.panX;
   gesture.startPanY = state.panY;
+  showZoomIndicator();
 }
 
 function beginSwipe(point) {
@@ -1952,6 +1981,7 @@ function handlePinchMove(points) {
   });
   state.panX = clamp(nextPanX, bounds.minX, bounds.maxX);
   state.panY = clamp(nextPanY, bounds.minY, bounds.maxY);
+  showZoomIndicator();
   applyPreviewTransform();
   syncNativeZoom();
 }
@@ -2011,6 +2041,10 @@ function onPointerUpOrCancel(event) {
   gestureSurface.releasePointerCapture?.(event.pointerId);
 
   const points = [...gesture.pointers.values()];
+  if (points.length < 2) {
+    scheduleZoomIndicatorHide();
+  }
+
   if (points.length === 0) {
     gesture.pointerGestureActive = false;
     gesture.startDistance = null;
@@ -2056,6 +2090,10 @@ function onTouchMove(event) {
 
 function onTouchEnd(event) {
   if (!gesture.touchGestureActive) return;
+
+  if (event.touches.length < 2) {
+    scheduleZoomIndicatorHide();
+  }
 
   if (event.touches.length === 1) {
     gesture.startDistance = null;
